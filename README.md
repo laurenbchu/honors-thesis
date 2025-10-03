@@ -1,5 +1,6 @@
 # Data Science Honors Thesis: Racial Policing and Prosecution Disparities
-Advised by Joshua Grossman
+Lauren Chu
+_Advised by Joshua Grossman_
 
 ## Overview
 I aim to answer the question: How do geographical disparities in policing relate to racial disparities in prosecution? While there exist many papers covering racial disparities in policing and racial disparities in prosecution, I hope to identify the relationship between the two stages within the criminal justice system so as to better inform criminal justice reform policy. I’ll focus on Orange County as a case study, with possible extensions to San Francisco and Contra Costa Counties, depending on data availability from the ACLU.

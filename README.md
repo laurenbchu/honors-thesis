@@ -1,12 +1,13 @@
 # Data Science Honors Thesis: Racial Policing and Prosecution Disparities
-Lauren Chu
+_Lauren Chu_
 
 [![Binder](https://mybinder.org/badge_logo.svg)]([https://mybinder.org/v2/gh/ls88-openscienceconnector/final-project/master](https://mybinder.org/v2/gh/laurenbchu/honors-thesis/main))
 
-_Advised by Joshua Grossman_
-
 ## Overview
-I aim to answer the question: How do geographical disparities in policing relate to racial disparities in prosecution? While there exist many papers covering racial disparities in policing and racial disparities in prosecution, I hope to identify the relationship between the two stages within the criminal justice system so as to better inform criminal justice reform policy. I’ll focus on Orange County as a case study, with possible extensions to San Francisco and Contra Costa Counties, depending on data availability from the ACLU.
+I aim to answer the question: _How do geographical disparities in policing relate to racial disparities in prosecution?_ While there exist many papers covering racial disparities in policing and racial disparities in prosecution, I hope to identify the relationship between the two stages within the criminal justice system so as to better inform criminal justice reform policy. I’ll focus on Orange County as a case study, with possible extensions to San Francisco and Contra Costa Counties, depending on data availability from the ACLU.
+
+## Advisor
+I am advised by Professor Joshua Grossman.
 
 ## Dataset
 I will primarily utilize the Racial and Identity Profiling Act (RIPA) data to identify geographical disparities in policing, which is a California-wide dataset with 14 tables on stops, searches, and seizures by hour, agency, month, location, primary reason for stop, citation, demographic information, and more. 	Because there is so much data and it’s not fully cleaned, I will write a data cleaning pipeline to aid in my analysis. 

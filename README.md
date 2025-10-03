@@ -1,5 +1,6 @@
 # Data Science Honors Thesis: Racial Policing and Prosecution Disparities
 Lauren Chu
+
 _Advised by Joshua Grossman_
 
 ## Overview

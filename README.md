@@ -1,4 +1,4 @@
-# Racial Policing and Prosecution Disparities
+# Data Science Honors Thesis: Racial Policing and Prosecution Disparities
 Advised by Joshua Grossman
 
 ## Overview

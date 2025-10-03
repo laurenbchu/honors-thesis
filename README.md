@@ -1,7 +1,10 @@
 # Data Science Honors Thesis: Racial Policing and Prosecution Disparities
-_Lauren Chu_
+Repository for Lauren Chu's Data Science Honors Thesis, Class of Spring 2026 at UC Berkeley
 
 [![Binder](https://mybinder.org/badge_logo.svg)]([https://mybinder.org/v2/gh/ls88-openscienceconnector/final-project/master](https://mybinder.org/v2/gh/laurenbchu/honors-thesis/main))
+
+## Contributors
+_Lauren Chu_
 
 ## Overview
 I aim to answer the question: _How do geographical disparities in policing relate to racial disparities in prosecution?_ While there exist many papers covering racial disparities in policing and racial disparities in prosecution, I hope to identify the relationship between the two stages within the criminal justice system so as to better inform criminal justice reform policy. I’ll focus on Orange County as a case study, with possible extensions to San Francisco and Contra Costa Counties, depending on data availability from the ACLU.

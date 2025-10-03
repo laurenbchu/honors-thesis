@@ -9,6 +9,8 @@ _Lauren Chu_
 ## Overview
 I aim to answer the question: _How do geographical disparities in policing relate to racial disparities in prosecution?_ While there exist many papers covering racial disparities in policing and racial disparities in prosecution, I hope to identify the relationship between the two stages within the criminal justice system so as to better inform criminal justice reform policy. I’ll focus on Orange County as a case study, with possible extensions to San Francisco and Contra Costa Counties, depending on data availability from the ACLU.
 
+This repository is for Lauren Chu's Data Science Honors Thesis, Class of Spring 2026 at UC Berkeley. It includes all the code and data involved in the research, which is taking place during the 2025-26 academic school year. 
+
 ## Advisor
 I am advised by Professor Joshua Grossman.
 
@@ -21,3 +23,13 @@ I will also utilize the ACLU’s Racial Justice Act (RJA) data, which has annual
 To conduct my EDA, I will first begin by checking for missing data points and duplicates within the RIPA data, as well as how to join together multiple tables to gain the most information per record. In order to only choose Orange County data, as well as analyze on a more granular level, I think it would be useful to add a geocode to each record for easier geographical analysis. For the RJA data, I will make sure that all of the categories per charge remain consistent over the years that I analyze, as well as identify the county or city averages for different prosecution outcomes (e.g. dismissal, plea, trial, sentence length). Using the Census data, I’ll identify the demographics for each county / city that I analyze. 
 
 Some ideas I have for evaluating my central question is to conduct a cost benefit analysis, in which I compare the rates of different policing methods with crime rates across cities or counties to see if higher police activity is correlated with reductions in crimes, because if not, then the disparate racial impact of the policing methods cannot be justified. I can also build a statistical model to estimate the likelihood of a stop resulting in a certain charge, which I can then use as a control for “risk” when comparing treatment across racial groups for more accurate analysis. To connect both of my datasets, I can identify stop, search, and “hit” rates to identify disparity ratios by racial group, and then conduct a similar process with prosecution filings, convictions, and sentencing. Once I have the concrete measures for both stages, I can conduct a correlation analysis and run a regression model if I have time, controlling for demographics. 
+
+## Directory Structure
+This repo contains subfolders, which contain the elements of the project.
+
+| Folder | Description |
+|-----|-----|
+| `data`  | data from the original analysis in CSV, TSV, and pip-separated format |
+| `images`  | image files used in the Jupyter Notebooks  |
+| `notebooks`  | Jupyter Notebook files, including reproduction analysis using both `pandas` and `datascience`, as well as the Pre-Analysis Plan and a "blank" notebook  |
+| `outputs`  | output data (same as original, for demo purposes) in CSV and TSV format  |

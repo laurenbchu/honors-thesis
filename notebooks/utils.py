@@ -78,7 +78,7 @@ def load_census(county_fips):
     census = census.iloc[1:]
 
     # ---- Fetch metadata for variable labels ----
-    metadata_url = f"https://api.census.gov/data/2020/dec/pl/variables.json"
+    metadata_url = "https://api.census.gov/data/2020/dec/pl/variables.json"
     metadata = pd.read_json(metadata_url, typ="series")
 
     variables = metadata["variables"]
@@ -90,3 +90,33 @@ def load_census(county_fips):
     census_relabeled = census.rename(columns=code_to_label)
 
     return census_relabeled
+
+
+def compute_prosecution_rates(
+    prosecution,
+    race_col="canonical_race",
+    year_col="year",
+    convicted_col="was_convicted",
+    enhancement_col="is_enhancement_charge",
+):
+    conviction_rates = (
+        prosecution
+        .groupby([race_col, year_col])[convicted_col]
+        .agg(total_cases="count", conviction_rate="mean")
+        .reset_index()
+    )
+
+    enhancement_rates = (
+        prosecution
+        .groupby([race_col, year_col])[enhancement_col]
+        .agg(total_cases="count", enhancement_rate="mean")
+        .reset_index()
+    )
+
+    prosecution_rates = conviction_rates.merge(
+        enhancement_rates[[race_col, year_col, "enhancement_rate"]],
+        on=[race_col, year_col],
+        how="left",
+    )
+
+    return prosecution_rates

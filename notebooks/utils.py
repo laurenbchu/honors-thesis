@@ -1,5 +1,5 @@
 import pandas as pd
-import matplotlib as plt
+import matplotlib.pyplot as plt
 
 def load_ripa_policing_data(county, years=(2021, 2022, 2023)):
     """
@@ -467,6 +467,7 @@ def visualization_setup(analysis: pd.DataFrame):
 
 
 def visualize_all_disparity_figures(analysis: pd.DataFrame):
+    
     """
     Display the full set of policing + prosecution disparity figures.
 

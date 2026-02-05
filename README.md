@@ -1,4 +1,4 @@
-# Data Science Honors Thesis: Racial Policing and Prosecution Disparities
+# Data Science Honors Thesis: Racial Disparities in Policing and Prosecution Outcomes in California Counties
 Repository for Lauren Chu's Data Science Honors Thesis, Class of Spring 2026 at UC Berkeley
 
 [![Binder](https://mybinder.org/badge_logo.svg)]([https://mybinder.org/v2/gh/ls88-openscienceconnector/final-project/master](https://mybinder.org/v2/gh/laurenbchu/honors-thesis/main))

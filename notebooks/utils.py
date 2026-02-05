@@ -176,18 +176,29 @@ def add_search_and_hit_indicators(df):
 def policing_table_for_year(policing, year):
     """
     Build a race-grouped policing summary table for one year.
+
+    Definitions
+    -----------
+    - Search Rate = searches / stops
+      (How often a stop results in a search)
+    - Hit Rate = hits / searches
+      (How often a search finds any contraband)
     """
 
     # Select only the year and group per race
     d = policing[policing["YEAR"] == year]
     g = d.groupby("RAE_FULL")
 
+    search_count = g["SEARCHED"].sum()
+    hit_count = g["HIT"].sum()
+    stop_count = g.size()
+
     out = pd.DataFrame({
-        "Search Rate": g["SEARCHED"].mean(), # Number of stops resulting in a search out of all stops
-        "Hit Rate": g["HIT"].mean(), # Number of stops with a hit (contraband found) out of all stops
-        "Search Count": g["SEARCHED"].sum(), # Number of stops resulting in a search
-        "Hit Count": g["HIT"].sum(), # Number of stops with a hit (contraband found)
-        "Stop Count": g.size(), # Total number of stops for that race in that year
+        "Search Count": search_count,                 # Number of stops resulting in a search
+        "Hit Count": hit_count,                       # Number of searches with a hit (contraband found)
+        "Stop Count": stop_count,                     # Total number of stops for that race in that year
+        "Search Rate": search_count / stop_count,     # searches / stops
+        "Hit Rate": hit_count / search_count,         # hits / searches
     })
 
     # Redefine the index to clarify that these are perceived race columns by the participating officer
@@ -358,7 +369,7 @@ def merge_policing_with_prosecution(policing_all, prosecution_rates, pros_race_c
 
 def add_disparity_metrics(analysis):
     """
-    Add White-normalized disparity ratios and the Search–Hit Gap to the analysis table.
+    Add White-normalized disparity ratios to the analysis table.
 
     Returns
     -------
@@ -388,11 +399,6 @@ def add_disparity_metrics(analysis):
             .set_index("Year")[m]
         )
         out[f"{m} (White=1)"] = out[m] / out["Year"].map(white_ref)
-
-    # "How much searching occurs relative to how often searches pay off?"
-    # Larger gap is many searches with fewer hits
-    # Compare gaps across races, not absolute values
-    out["Search–Hit Gap"] = out["Search Rate"] - out["Hit Rate"]
 
     return out
 
@@ -513,15 +519,6 @@ def visualize_all_disparity_figures(analysis: pd.DataFrame):
         ),
     )
 
-    _line_chart(
-        y_col="Search–Hit Gap",
-        title=f"Search–Hit Gap (Search Rate − Hit Rate) by Perceived Race ({years[0]}–{years[-1]})",
-        ylabel="Search–Hit Gap",
-        caption=(
-            f"This figure shows the difference between search rates and hit rates for each racial group from {years[0]} to {years[-1]}. "
-            "Larger gaps indicate more frequent searching relative to successful contraband recovery."
-        ),
-    )
 
     # --- 3) Prosecution outcomes over time ---
     _line_chart(

@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def load_ripa_policing_data(county, years=(2021, 2022, 2023)):
+def load_ripa_policing_data(county, years):
     """
     Load cleaned RIPA policing data for a given county and multiple years,
     add a YEAR column, concatenate, and map race codes to labels.
@@ -9,8 +9,8 @@ def load_ripa_policing_data(county, years=(2021, 2022, 2023)):
     Parameters
     ----------
     county : str
-        County name used in filenames (e.g. "orange", "sanmateo")
-    years : iterable of int, default (2021, 2022, 2023)
+        County name used in filenames (e.g. "orange", "san_mateo")
+    years : iterable of int
         Years of data to load
 
     Returns
@@ -20,6 +20,7 @@ def load_ripa_policing_data(county, years=(2021, 2022, 2023)):
         and mapped RAE_FULL race labels
     """
 
+    # Base url of the github where the data is coming from
     base_url = (
         "https://raw.githubusercontent.com/"
         "laurenbchu/honors-thesis/main/data/cleaned/"
@@ -27,15 +28,17 @@ def load_ripa_policing_data(county, years=(2021, 2022, 2023)):
 
     dfs = []
 
+    # For each year, read in the csv and add a year column
     for year in years:
         url = f"{base_url}cleaned_ripa_{county}_{year}.csv"
         df = pd.read_csv(url)
         df["YEAR"] = year
         dfs.append(df)
 
+    # Combine all the years together
     policing = pd.concat(dfs, axis=0, ignore_index=True)
 
-    # Map race codes to race labels
+    # Map race codes from RIPA data to race labels from documentation
     races = {
         1: "Asian",
         2: "Black/African American",
@@ -59,8 +62,7 @@ def load_census(county_fips):
     Parameters
     ----------
     county_fips : str
-        5-digit county FIPS code (e.g. "06059" for Orange County,
-        "06081" for San Mateo County)
+        5-digit county FIPS code (e.g. "06059" for Orange County)
 
     Returns
     -------
@@ -68,80 +70,44 @@ def load_census(county_fips):
         Census P2 table with readable column labels and NA columns removed
     """
 
-    # ---- Fetch P2 data ----
+    # Import census data from API
     data_url = (
         f"https://api.census.gov/data/2020/dec/pl"
         f"?get=group(P2)&ucgid=0500000US{county_fips}"
     )
+
+    # Reformat to make data readable
     census = pd.read_json(data_url)
     census.columns = census.iloc[0]
     census = census.iloc[1:]
 
-    # ---- Fetch metadata for variable labels ----
+    # Import metadata for variable labels
     metadata_url = "https://api.census.gov/data/2020/dec/pl/variables.json"
     metadata = pd.read_json(metadata_url, typ="series")
 
+    # Relabel each column with readable label of race/ethnicity group
     variables = metadata["variables"]
     meta = pd.DataFrame.from_dict(variables, orient="index")
     code_to_label = meta["label"].to_dict()
 
-    # ---- Clean + relabel ----
+    # Remove columns with no data
     census = census.loc[:, ~census.columns.str.endswith("NA")]
     census_relabeled = census.rename(columns=code_to_label)
 
     return census_relabeled
 
 
-def compute_prosecution_rates(
-    prosecution,
-    race_col="canonical_race",
-    year_col="year",
-    convicted_col="was_convicted",
-    enhancement_col="is_enhancement_charge",
-):
-    conviction_rates = (
-        prosecution
-        .groupby([race_col, year_col])[convicted_col]
-        .agg(total_cases="count", conviction_rate="mean")
-        .reset_index()
-    )
-
-    enhancement_rates = (
-        prosecution
-        .groupby([race_col, year_col])[enhancement_col]
-        .agg(total_cases="count", enhancement_rate="mean")
-        .reset_index()
-    )
-
-    prosecution_rates = conviction_rates.merge(
-        enhancement_rates[[race_col, year_col, "enhancement_rate"]],
-        on=[race_col, year_col],
-        how="left",
-    )
-
-    return prosecution_rates
-
-
-def condense_ripa_races(
-    df: pd.DataFrame,
-    race_col: str = "RAE_FULL",
-    to_other: list = None,
-    other_label: str = "Other",
-):
+def condense_ripa_races(df):
     """
-    Collapse selected RIPA race categories into a single 'Other' category.
+    The RJA prosecution data is often segmented into 
+    "Latinx, White, Black, Asian, Other"
+    So collapse the following from the RIPA data into the "Other" category
+    "Middle Eastern/South Asian, Multiracial, Native American, Pacific Islander"
 
     Parameters
     ----------
     df : pandas.DataFrame
         RIPA policing dataframe
-    race_col : str, default "RAE_FULL"
-        Column containing perceived race labels
-    to_other : list of str, optional
-        Race categories to collapse into 'Other'
-        Defaults to standard RIPA categories
-    other_label : str, default "Other"
-        Label used for collapsed categories
 
     Returns
     -------
@@ -149,24 +115,21 @@ def condense_ripa_races(
         Copy of df with race categories collapsed
     """
 
-    if to_other is None:
-        to_other = [
-            "Middle Eastern/South Asian",
-            "Multiracial",
-            "Native American",
-            "Pacific Islander",
-        ]
+    # Selected RIPA race categories to combine into "Other"
+    to_other = [
+        "Middle Eastern/South Asian",
+        "Multiracial",
+        "Native American",
+        "Pacific Islander",
+    ]
 
     out = df.copy()
-    out[race_col] = out[race_col].replace(to_other, other_label)
+    out["RAE_FULL"] = out["RAE_FULL"].replace(to_other, "Other")
 
     return out
 
 
-def add_search_and_hit_indicators(
-    df: pd.DataFrame,
-    contraband_cols: list = None,
-):
+def add_search_and_hit_indicators(df):
     """
     Add binary indicators for whether a search occurred and whether a hit occurred
     in RIPA policing data.
@@ -175,8 +138,6 @@ def add_search_and_hit_indicators(
     ----------
     df : pandas.DataFrame
         RIPA policing dataframe
-    contraband_cols : list of str, optional
-        Columns indicating types of contraband found
 
     Returns
     -------
@@ -184,19 +145,19 @@ def add_search_and_hit_indicators(
         Copy of df with SEARCHED and HIT columns added
     """
 
-    if contraband_cols is None:
-        contraband_cols = [
-            "CED_FIREARM",
-            "CED_AMMUNITION",
-            "CED_WEAPON",
-            "CED_DRUGS",
-            "CED_ALCOHOL",
-            "CED_MONEY",
-            "CED_DRUG_PARAPHERNALIA",
-            "CED_STOLEN_PROP",
-            "CED_ELECT_DEVICE",
-            "CED_OTHER_CONTRABAND",
-        ]
+    # Columns that count as contraband found
+    contraband_cols = [
+        "CED_FIREARM",
+        "CED_AMMUNITION",
+        "CED_WEAPON",
+        "CED_DRUGS",
+        "CED_ALCOHOL",
+        "CED_MONEY",
+        "CED_DRUG_PARAPHERNALIA",
+        "CED_STOLEN_PROP",
+        "CED_ELECT_DEVICE",
+        "CED_OTHER_CONTRABAND",
+    ]
 
     out = df.copy()
 
@@ -212,32 +173,29 @@ def add_search_and_hit_indicators(
     return out
 
 
-def policing_table_for_year(
-    policing: pd.DataFrame,
-    year: int
-):
+def policing_table_for_year(policing, year):
     """
     Build a race-grouped policing summary table for one year.
     """
+
+    # Select only the year and group per race
     d = policing[policing["YEAR"] == year]
     g = d.groupby("RAE_FULL")
 
     out = pd.DataFrame({
-        "Search Rate": g["SEARCHED"].mean(),
-        "Hit Rate": g["HIT"].mean(),
-        "Search Count": g["SEARCHED"].sum(),
-        "Hit Count": g["HIT"].sum(),
-        "Stop Count": g.size(),
+        "Search Rate": g["SEARCHED"].mean(), # Number of stops resulting in a search out of all stops
+        "Hit Rate": g["HIT"].mean(), # Number of stops with a hit (contraband found) out of all stops
+        "Search Count": g["SEARCHED"].sum(), # Number of stops resulting in a search
+        "Hit Count": g["HIT"].sum(), # Number of stops with a hit (contraband found)
+        "Stop Count": g.size(), # Total number of stops for that race in that year
     })
 
+    # Redefine the index to clarify that these are perceived race columns by the participating officer
     out.index.name = "Perceived Race"
     return out
 
 
-def policing_tables_by_year(
-    policing: pd.DataFrame,
-    years: list
-):
+def policing_tables_by_year(policing, years):
     """
     Build policing tables for multiple years. Returns {year: table}.
     """
@@ -250,25 +208,19 @@ def policing_tables_by_year(
     }
 
 
-def census_rollup(
-    census_relabeled: pd.DataFrame,
-    id_cols: list = None
-):
+def census_rollup(census_relabeled):
     """
     Convert a relabeled Decennial PL P2 census table to your coarse race population Series.
 
     This function:
       1) coerces all non-id columns to numeric
-      2) selects the row at row_idx (default 0)
-      3) returns a coarse population Series with keys:
+      2) returns a coarse population Series with keys:
          ["Hispanic/Latino", "White", "Black/African American", "Asian", "Other"]
 
     Parameters
     ----------
     census_relabeled : pandas.DataFrame
         Census P2 table with readable labels (after renaming columns)
-    id_cols : list of str, optional
-        Columns to keep as non-numeric identifiers
 
     Returns
     -------
@@ -276,18 +228,18 @@ def census_rollup(
         Coarse race populations
     """
 
-    if id_cols is None:
-        id_cols = ["NAME", "Geography", "Uniform Census Geography Identifier clause"]
+    id_cols = ["NAME", "Geography", "Uniform Census Geography Identifier clause"]
 
     df = census_relabeled.copy()
 
-    # Coerce to numeric
+    # Coerce the non-id columns to numeric types for easier computation
     for c in df.columns:
         if c not in id_cols:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
     pop = df.iloc[0]
 
+    # Relabel/add together the census to be 5 categories
     return pd.Series({
         "Hispanic/Latino": pop[" !!Total:!!Hispanic or Latino"],
         "White": pop[" !!Total:!!Not Hispanic or Latino:!!Population of one race:!!White alone"],
@@ -302,77 +254,86 @@ def census_rollup(
     })
 
 
-def add_per_capita_rates(
-    policing_table: pd.DataFrame,
-    census_coarse: pd.Series,
-    per: float = 1000.0,
-    search_count_col: str = "Search Count",
-    hit_count_col: str = "Hit Count",
-    stop_count_col: str = "Stop Count",
-):
+def add_per_capita_rates(policing_table, census_coarse):
     """
-    Add per-capita columns (per N people) to a policing table indexed by race.
+    Add per-capita columns (per 1000 people) to a policing table indexed by race.
     """
     out = policing_table.copy()
 
-    # align population to table index (Perceived Race)
+    # Gives the census values in the same order as in the policing table
     pop = census_coarse.reindex(out.index)
 
-    out[f"Searches per {int(per):,}"] = (out[search_count_col] / pop) * per
-    out[f"Hits per {int(per):,}"] = (out[hit_count_col] / pop) * per
-    out[f"Stops per {int(per):,}"] = (out[stop_count_col] / pop) * per
+    # Number to divide by
+    per = 1000
+
+    out[f"Searches per {int(per):,}"] = (out["Search Count"] / pop) * per
+    out[f"Hits per {int(per):,}"] = (out["Hit Count"] / pop) * per
+    out[f"Stops per {int(per):,}"] = (out["Stop Count"] / pop) * per
 
     return out
 
 
-def add_per_capita_rates_by_year(
-    tables_by_year: dict[int, pd.DataFrame],
-    census_coarse: pd.Series,
-    per: float = 1000.0
-):
+def add_per_capita_rates_by_year(tables_by_year, census_coarse):
     """
     Apply per-capita columns to each year's policing table.
     """
-    return {yr: add_per_capita_rates(t, census_coarse, per=per) for yr, t in tables_by_year.items()}
+    return {yr: add_per_capita_rates(t, census_coarse) for yr, t in tables_by_year.items()}
 
 
-def concat_policing_tables(
-    tables_by_year: dict[int, pd.DataFrame],
-    year_col_name: str = "Year"
-):
+def concat_policing_tables(tables_by_year):
     """
     Convert {year: table} into one long dataframe with a Year column.
     """
     frames = []
     for yr, t in sorted(tables_by_year.items()):
-        frames.append(t.reset_index().assign(**{year_col_name: yr}))
+        frames.append(t.reset_index().assign(**{"Year": yr}))
     return pd.concat(frames, ignore_index=True)
 
 
-def merge_policing_with_prosecution(
-    policing_all: pd.DataFrame,
-    prosecution_rates: pd.DataFrame,
-    pros_race_col: str = "canonical_race",
-    pros_year_col: str = "year",
-    race_mapping: dict = None
-):
+def compute_prosecution_rates(prosecution, race_col, year_col, convicted_col, enhancement_col):
+    
+    # Number of convictions out of all charged cases
+    conviction_rates = (
+        prosecution
+        .groupby([race_col, year_col])[convicted_col]
+        .agg(total_cases="count", conviction_rate="mean")
+        .reset_index()
+    )
+
+    # Number of enhanced cases out of all charged cases
+    enhancement_rates = (
+        prosecution
+        .groupby([race_col, year_col])[enhancement_col]
+        .agg(total_cases="count", enhancement_rate="mean")
+        .reset_index()
+    )
+
+    # Create one big table with the conviction and enhancement rate for each race x year
+    prosecution_rates = conviction_rates.merge(
+        enhancement_rates[[race_col, year_col, "enhancement_rate"]],
+        on=[race_col, year_col],
+        how="left",
+    )
+
+    return prosecution_rates
+
+
+def merge_policing_with_prosecution(policing_all, prosecution_rates, pros_race_col, pros_year_col):
     """
-    Merge policing and prosecution tables using standardized policing columns.
-
-    Assumes policing_all has:
-      - 'Perceived Race'
-      - 'Year'
+    Merge policing and prosecution tables using standardized policing columns for race.
     """
 
-    if race_mapping is None:
-        race_mapping = {
-            "Latinx": "Hispanic/Latino",
-            "Black": "Black/African American",
-        }
+    # Mapping so that policing and prosecution have same labels for same racial/ethnic groups
+    race_mapping = {
+        "Latinx": "Hispanic/Latino",
+        "Black": "Black/African American",
+    }
 
+    # Creates a column that maps each prosecution race to its equivalent policing race
     pros = prosecution_rates.copy()
     pros["police_equivalent_race"] = pros[pros_race_col].replace(race_mapping)
 
+    # Merge the policing and prosecution tables together
     analysis = policing_all.merge(
         pros,
         left_on=["Perceived Race", "Year"],
@@ -385,7 +346,7 @@ def merge_policing_with_prosecution(
         "enhancement_rate": "Enhancement Rate",
     })
 
-    # Only drop helper columns — never drop policing 'Year'
+    # Only drop helper column of the police equivalent race
     drop_cols = ["police_equivalent_race"]
     if pros_year_col != "Year":
         drop_cols.append(pros_year_col)
@@ -395,16 +356,9 @@ def merge_policing_with_prosecution(
     return analysis
 
 
-def add_disparity_metrics(analysis: pd.DataFrame):
+def add_disparity_metrics(analysis):
     """
     Add White-normalized disparity ratios and the Search–Hit Gap to the analysis table.
-
-    This function assumes:
-      - policing columns are standardized
-      - race column is 'Perceived Race'
-      - year column is 'Year'
-      - White is the reference group
-      - all metric column names are fixed
 
     Returns
     -------
@@ -443,7 +397,7 @@ def add_disparity_metrics(analysis: pd.DataFrame):
     return out
 
 
-def visualization_setup(analysis: pd.DataFrame):
+def visualization_setup(analysis):
     """
     Setup for keeping race order consistent and saving plots when needed.
 
@@ -470,12 +424,6 @@ def visualize_all_disparity_figures(analysis: pd.DataFrame):
     
     """
     Display the full set of policing + prosecution disparity figures.
-
-    Assumptions:
-      - analysis has 'Year' and 'Perceived Race'
-      - 'Perceived Race' is a categorical with your desired ordering
-        (run visualization_setup(analysis) first)
-      - Displays plots only (no saving)
 
     Handles:
       - Counties with 2021–2022 only (e.g., San Mateo)

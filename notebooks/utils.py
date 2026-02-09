@@ -426,7 +426,7 @@ def visualization_setup(analysis):
 
 
 
-def visualize_all_disparity_figures(analysis: pd.DataFrame):
+def visualize_all_disparity_figures(analysis):
     
     """
     Display the full set of policing + prosecution disparity figures.
@@ -604,3 +604,285 @@ def visualize_all_disparity_figures(analysis: pd.DataFrame):
         plt.xticks(rotation=30, ha="right")
         plt.tight_layout()
         plt.show()
+
+
+def visualize(analysis):
+    """
+    Visualize policing + prosecution disparities using the recommended hierarchy:
+
+      A) Exposure (context)
+         - Stops per 1,000
+         - Searches per 1,000
+
+      B) Policing decision + outcome tests (core)
+         - Search Rate (conditional on stop)
+         - Hit Rate (OUTCOME TEST; conditional on search)
+
+      C) Prosecution outcome tests (core)
+         - Conviction Rate (OUTCOME TEST; conditional on case filed)
+         - Enhancement Rate (OUTCOME TEST; conditional on case filed)
+
+      D) Summary comparisons (supporting)
+         - White-normalized ratios (latest year), if available
+         - Earliest vs latest stop disparity ratio, if available
+
+    Notes:
+      - Handles 2021–2022 only (e.g., San Mateo) or 2021–2023 (e.g., Orange) automatically.
+      - Displays only (no saving).
+      - Assumes 'Perceived Race' and 'Year' columns exist.
+      - Uses categorical ordering if 'Perceived Race' is categorical.
+    """
+    import matplotlib.pyplot as plt  # import locally to avoid 'plt' being shadowed elsewhere
+
+    df = analysis.copy()
+
+    # Race order (prefer categorical categories if available)
+    if pd.api.types.is_categorical_dtype(df["Perceived Race"]):
+        races = list(df["Perceived Race"].cat.categories)
+    else:
+        races = sorted(df["Perceived Race"].dropna().unique().tolist())
+
+    years = sorted(df["Year"].dropna().unique().tolist())
+    if not years:
+        raise ValueError("No years found in analysis['Year'].")
+
+    year_span = f"{years[0]}–{years[-1]}"
+
+    def _set_year_ticks():
+        plt.xticks(years)
+
+    def _line_chart(
+        y_col: str,
+        *,
+        title: str,
+        subtitle: str | None,
+        ylabel: str,
+        caption: str,
+    ) -> None:
+        if y_col not in df.columns:
+            return
+
+        plt.figure(figsize=(8, 5))
+
+        for race in races:
+            d = df[df["Perceived Race"] == race].sort_values("Year")
+            if len(d) > 0 and d[y_col].notna().any():
+                plt.plot(d["Year"], d[y_col], marker="o", label=race)
+
+        # Title + short subtitle line (when applicable)
+        if subtitle:
+            plt.suptitle(title, y=1.02)
+            plt.title(subtitle, fontsize=10)
+        else:
+            plt.title(title)
+
+        plt.xlabel("Year")
+        plt.ylabel(ylabel)
+        plt.legend()
+        _set_year_ticks()
+
+        plt.figtext(
+            0.5, -0.05,
+            caption,
+            ha="center",
+            fontsize=10,
+            wrap=True
+        )
+
+        plt.tight_layout()
+        plt.show()
+
+    def _bar_chart_latest_year(
+        cols: list[str],
+        *,
+        title: str,
+        subtitle: str | None,
+        ylabel: str,
+        caption: str,
+    ) -> None:
+        latest_year = years[-1]
+        latest_df = df[df["Year"] == latest_year].copy()
+        if latest_df.empty:
+            return
+
+        cols = [c for c in cols if c in latest_df.columns]
+        if not cols:
+            return
+
+        plot_df = latest_df.set_index("Perceived Race")[cols].reindex(races)
+
+        ax = plot_df.plot(kind="bar", figsize=(10, 4))
+        ax.axhline(1.0)
+
+        if subtitle:
+            plt.suptitle(title, y=1.02)
+            plt.title(subtitle, fontsize=10)
+        else:
+            plt.title(title)
+
+        plt.xlabel("Perceived Race")
+        plt.ylabel(ylabel)
+
+        plt.figtext(
+            0.5, -0.08,
+            caption,
+            ha="center",
+            fontsize=10,
+            wrap=True
+        )
+
+        plt.xticks(rotation=30, ha="right")
+        plt.tight_layout()
+        plt.show()
+
+    def _bar_chart_earliest_vs_latest(
+        col: str,
+        *,
+        title: str,
+        subtitle: str | None,
+        ylabel: str,
+        caption: str,
+    ) -> None:
+        if col not in df.columns:
+            return
+        if len(years) < 2:
+            return
+
+        earliest_year = years[0]
+        latest_year = years[-1]
+        if earliest_year == latest_year:
+            return
+
+        d_earliest = df[df["Year"] == earliest_year].set_index("Perceived Race")[col]
+        d_latest = df[df["Year"] == latest_year].set_index("Perceived Race")[col]
+
+        comp = pd.DataFrame({str(earliest_year): d_earliest, str(latest_year): d_latest}).reindex(races)
+
+        ax = comp.plot(kind="bar", figsize=(8, 4))
+        ax.axhline(1.0)
+
+        if subtitle:
+            plt.suptitle(title, y=1.02)
+            plt.title(subtitle, fontsize=10)
+        else:
+            plt.title(title)
+
+        plt.xlabel("Perceived Race")
+        plt.ylabel(ylabel)
+
+        plt.figtext(
+            0.5, -0.08,
+            caption,
+            ha="center",
+            fontsize=10,
+            wrap=True
+        )
+
+        plt.xticks(rotation=30, ha="right")
+        plt.tight_layout()
+        plt.show()
+
+    # =========================================================
+    # A) Exposure (context)
+    # =========================================================
+    _line_chart(
+        "Stops per 1,000",
+        title=f"Stops per 1,000 Residents by Perceived Race ({year_span})",
+        subtitle="Exposure (context): population-normalized stop frequency",
+        ylabel="Stops per 1,000 (2020 Census baseline)",
+        caption=(
+            f"This figure shows how often people in each racial group are stopped overall from {years[0]} to {years[-1]}. "
+            "Rates are expressed as stops per 1,000 residents, which adjusts for differences in population sizes."
+        ),
+    )
+
+    _line_chart(
+        "Searches per 1,000",
+        title=f"Searches per 1,000 Residents by Perceived Race ({year_span})",
+        subtitle="Exposure (context): population-normalized search frequency",
+        ylabel="Searches per 1,000 (2020 Census baseline)",
+        caption=(
+            f"This figure shows how often people in each racial group are searched overall from {years[0]} to {years[-1]}. "
+            "Searches are reported per 1,000 residents, reflecting population-level exposure to police searches."
+        ),
+    )
+
+    # =========================================================
+    # B) Policing decision + outcome tests (core)
+    # =========================================================
+    _line_chart(
+        "Search Rate",
+        title=f"Search Rate by Perceived Race ({year_span})",
+        subtitle="Conditional on stop: searches ÷ stops",
+        ylabel="Search Rate",
+        caption=(
+            f"This figure shows the likelihood that a police stop results in a search for each racial group from {years[0]} to {years[-1]}. "
+            "The search rate reflects police decision-making conditional on a stop, rather than overall exposure."
+        ),
+    )
+
+    _line_chart(
+        "Hit Rate",
+        title=f"Hit Rate by Perceived Race ({year_span})",
+        subtitle="Outcome test (conditional on search): hits ÷ searches",
+        ylabel="Hit Rate",
+        caption=(
+            f"This figure shows how often police searches yield contraband for each racial group from {years[0]} to {years[-1]}. "
+            "Because it is conditional on searches, the hit rate functions as an outcome test of whether searches are equally productive across groups."
+        ),
+    )
+
+    # =========================================================
+    # C) Prosecution outcome tests (core)
+    # =========================================================
+    _line_chart(
+        "Conviction Rate",
+        title=f"Conviction Rate by Perceived Race ({year_span})",
+        subtitle="Outcome test (conditional on case filed): convictions ÷ cases",
+        ylabel="Conviction Rate",
+        caption=(
+            f"This figure shows conviction rates for prosecuted cases by racial group from {years[0]} to {years[-1]}. "
+            "Rates reflect the proportion of cases resulting in a conviction once charges are filed."
+        ),
+    )
+
+    _line_chart(
+        "Enhancement Rate",
+        title=f"Enhancement Rate by Perceived Race ({year_span})",
+        subtitle="Outcome test (conditional on case filed): enhancements ÷ cases",
+        ylabel="Enhancement Rate",
+        caption=(
+            f"This figure shows how often cases include sentencing enhancements by racial group from {years[0]} to {years[-1]}. "
+            "Enhancement rates reflect prosecutorial decisions following case filing."
+        ),
+    )
+
+    # =========================================================
+    # D) Summary comparisons (supporting)
+    # =========================================================
+    _bar_chart_latest_year(
+        cols=[
+            "Stops per 1,000 (White=1)",
+            "Searches per 1,000 (White=1)",
+            "Conviction Rate (White=1)",
+            "Enhancement Rate (White=1)",
+        ],
+        title=f"Disparity Ratios in Policing and Prosecution ({years[-1]}; White = 1)",
+        subtitle="Summary comparison: each metric normalized to White residents (White = 1)",
+        ylabel="Ratio relative to White",
+        caption=(
+            f"This figure compares policing and prosecution outcomes across racial groups in {years[-1]}, normalized to White residents "
+            "(White = 1). Values greater than 1 indicate higher rates relative to White residents, while values below 1 indicate lower rates."
+        ),
+    )
+
+    _bar_chart_earliest_vs_latest(
+        col="Stops per 1,000 (White=1)",
+        title=f"Stop Rate Disparity Ratio Change ({years[0]} vs {years[-1]}; White = 1)",
+        subtitle="Summary comparison over time: earliest vs latest year available",
+        ylabel="Ratio relative to White",
+        caption=(
+            f"This figure compares stop rate disparities in {years[0]} and {years[-1]} using White residents as the reference group (White = 1). "
+            "Changes over time indicate whether racial disparities in police stops widened or narrowed."
+        ),
+    )

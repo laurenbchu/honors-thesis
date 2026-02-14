@@ -1,59 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def load_ripa_policing_data(county, years):
-    """
-    Load cleaned RIPA policing data for a given county and multiple years,
-    add a YEAR column, concatenate, and map race codes to labels.
-
-    Parameters
-    ----------
-    county : str
-        County name used in filenames (e.g. "orange", "san_mateo")
-    years : iterable of int
-        Years of data to load
-
-    Returns
-    -------
-    policing : pandas.DataFrame
-        Concatenated RIPA policing dataframe with YEAR column
-        and mapped RAE_FULL race labels
-    """
-
-    # Base url of the github where the data is coming from
-    base_url = (
-        "https://raw.githubusercontent.com/"
-        "laurenbchu/honors-thesis/main/data/cleaned/"
-    )
-
-    dfs = []
-
-    # For each year, read in the csv and add a year column
-    for year in years:
-        url = f"{base_url}cleaned_ripa_{county}_{year}.csv"
-        df = pd.read_csv(url)
-        df["YEAR"] = year
-        dfs.append(df)
-
-    # Combine all the years together
-    policing = pd.concat(dfs, axis=0, ignore_index=True)
-
-    # Map race codes from RIPA data to race labels from documentation
-    races = {
-        1: "Asian",
-        2: "Black/African American",
-        3: "Hispanic/Latino",
-        4: "Middle Eastern/South Asian",
-        5: "Native American",
-        6: "Pacific Islander",
-        7: "White",
-        8: "Multiracial",
-    }
-
-    policing["RAE_FULL"] = policing["RAE_FULL"].map(races)
-
-    return policing
-
 
 def load_census(county_fips):
     """

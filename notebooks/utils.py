@@ -290,9 +290,7 @@ def visualization_setup(analysis):
     return out
 
 
-
 def visualize_all_disparity_figures(analysis):
-    
     """
     Display the full set of policing + prosecution disparity figures.
 
@@ -328,7 +326,10 @@ def visualize_all_disparity_figures(analysis):
         plt.title(title)
         plt.xlabel("Year")
         plt.ylabel(ylabel)
-        plt.legend()
+
+        # IMPORTANT: this is policing race labeling (perceived race)
+        plt.legend(title="Perceived Race")
+
         _set_year_ticks()
 
         plt.figtext(
@@ -384,21 +385,20 @@ def visualize_all_disparity_figures(analysis):
         ),
     )
 
-
     # --- 3) Prosecution outcomes over time ---
     _line_chart(
-        y_col="Conviction Rate",
-        title=f"Conviction Rate by Canonical Race ({years[0]}–{years[-1]})",
-        ylabel="Conviction Rate",
+        y_col="Prosecution Rate",
+        title=f"Prosecution Rate by Race ({years[0]}–{years[-1]})",
+        ylabel="Prosecution Rate",
         caption=(
-            f"This figure shows conviction rates for prosecuted cases by racial group from {years[0]} to {years[-1]}. "
-            "Rates reflect the proportion of cases resulting in a conviction once charges are filed."
+            f"This figure shows prosecution rates for cases by racial group from {years[0]} to {years[-1]}. "
+            "Rates reflect the proportion of cases resulting in the outcome you defined as the prosecution rate."
         ),
     )
 
     _line_chart(
         y_col="Enhancement Rate",
-        title=f"Enhancement Rate by Canonical Race ({years[0]}–{years[-1]})",
+        title=f"Enhancement Rate by Race ({years[0]}–{years[-1]})",
         ylabel="Enhancement Rate",
         caption=(
             f"This figure shows how often cases include sentencing enhancements by racial group from {years[0]} to {years[-1]}. "
@@ -409,10 +409,11 @@ def visualize_all_disparity_figures(analysis):
     # --- 4) Headline disparities: White-normalized ratios (latest year) ---
     latest_year = years[-1]
     latest_df = df[df["Year"] == latest_year].copy()
+
     ratio_cols = [
         "Stops per 1,000 (White=1)",
         "Searches per 1,000 (White=1)",
-        "Conviction Rate (White=1)",
+        "Prosecution Rate (White=1)",
         "Enhancement Rate (White=1)",
     ]
     ratio_cols = [c for c in ratio_cols if c in latest_df.columns]
@@ -422,8 +423,9 @@ def visualize_all_disparity_figures(analysis):
 
         plot_df.plot(kind="bar", figsize=(10, 4))
         plt.axhline(1.0)
+
         plt.title(f"Disparity Ratios in Policing and Prosecution ({latest_year}; White = 1)")
-        plt.xlabel("Race")
+        plt.xlabel("Perceived Race")  # policing label convention
         plt.ylabel("Ratio relative to White")
 
         plt.figtext(
@@ -451,8 +453,9 @@ def visualize_all_disparity_figures(analysis):
 
         comp.plot(kind="bar", figsize=(8, 4))
         plt.axhline(1.0)
+
         plt.title(f"Stop Rate Disparity Ratio Change ({earliest_year} vs {latest_year}; White = 1)")
-        plt.xlabel("Perceived Race")
+        plt.xlabel("Perceived Race")  # policing label convention
         plt.ylabel("Ratio relative to White")
 
         plt.figtext(
@@ -484,13 +487,12 @@ def visualize(analysis):
          - Hit Rate (OUTCOME TEST; conditional on search)
 
       C) Prosecution outcome tests (core)
-         - Conviction Rate (OUTCOME TEST; conditional on case filed)
+         - Prosecution Rate (OUTCOME TEST; conditional on case filed / your definition)
          - Enhancement Rate (OUTCOME TEST; conditional on case filed)
 
       D) Summary comparisons (supporting)
          - White-normalized ratios (latest year), if available
          - Earliest vs latest stop disparity ratio, if available
-
     """
     import matplotlib.pyplot as plt  # import locally to avoid 'plt' being shadowed elsewhere
 
@@ -529,7 +531,6 @@ def visualize(analysis):
             if len(d) > 0 and d[y_col].notna().any():
                 plt.plot(d["Year"], d[y_col], marker="o", label=race)
 
-        # Title + short subtitle line (when applicable)
         if subtitle:
             plt.suptitle(title, y=1.02)
             plt.title(subtitle, fontsize=10)
@@ -538,7 +539,13 @@ def visualize(analysis):
 
         plt.xlabel("Year")
         plt.ylabel(ylabel)
-        plt.legend()
+
+        if "Stop" in y_col or "Search" in y_col or "Hit" in y_col:
+            plt.legend(title="Perceived Race")
+        else:
+            plt.legend(title="Race")
+
+
         _set_year_ticks()
 
         plt.figtext(
@@ -580,7 +587,7 @@ def visualize(analysis):
         else:
             plt.title(title)
 
-        plt.xlabel("Perceived Race")
+        plt.xlabel("Race")
         plt.ylabel(ylabel)
 
         plt.figtext(
@@ -613,8 +620,8 @@ def visualize(analysis):
         if earliest_year == latest_year:
             return
 
-        d_earliest = df[df["Year"] == earliest_year].set_index("Perceived Race")[col]
-        d_latest = df[df["Year"] == latest_year].set_index("Perceived Race")[col]
+        d_earliest = df[df["Year"] == earliest_year].set_index("Race")[col]
+        d_latest = df[df["Year"] == latest_year].set_index("Race")[col]
 
         comp = pd.DataFrame({str(earliest_year): d_earliest, str(latest_year): d_latest}).reindex(races)
 
@@ -627,7 +634,7 @@ def visualize(analysis):
         else:
             plt.title(title)
 
-        plt.xlabel("Perceived Race")
+        plt.xlabel("Race")
         plt.ylabel(ylabel)
 
         plt.figtext(
@@ -696,19 +703,19 @@ def visualize(analysis):
     # C) Prosecution outcome tests (core)
     # =========================================================
     _line_chart(
-        "Conviction Rate",
-        title=f"Conviction Rate by Perceived Race ({year_span})",
-        subtitle="Outcome test (conditional on case filed): convictions ÷ cases",
-        ylabel="Conviction Rate",
+        "Prosecution Rate",
+        title=f"Prosecution Rate by Race ({year_span})",
+        subtitle="Outcome test (conditional on case filed): prosecutions ÷ cases",
+        ylabel="Prosecution Rate",
         caption=(
-            f"This figure shows conviction rates for prosecuted cases by racial group from {years[0]} to {years[-1]}. "
-            "Rates reflect the proportion of cases resulting in a conviction once charges are filed."
+            f"This figure shows prosecution rates for cases by racial group from {years[0]} to {years[-1]}. "
+            "Rates reflect the proportion of cases resulting in the outcome you defined as the prosecution rate."
         ),
     )
 
     _line_chart(
         "Enhancement Rate",
-        title=f"Enhancement Rate by Perceived Race ({year_span})",
+        title=f"Enhancement Rate by Race ({year_span})",
         subtitle="Outcome test (conditional on case filed): enhancements ÷ cases",
         ylabel="Enhancement Rate",
         caption=(
@@ -724,7 +731,7 @@ def visualize(analysis):
         cols=[
             "Stops per 1,000 (White=1)",
             "Searches per 1,000 (White=1)",
-            "Conviction Rate (White=1)",
+            "Prosecution Rate (White=1)",
             "Enhancement Rate (White=1)",
         ],
         title=f"Disparity Ratios in Policing and Prosecution ({years[-1]}; White = 1)",

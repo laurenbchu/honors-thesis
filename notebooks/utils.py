@@ -1,7 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-
 def load_census(county_fips):
     """
     Load and relabel Decennial Census PL Table P2 data for a given county.
@@ -44,126 +43,29 @@ def load_census(county_fips):
     return census_relabeled
 
 
-def condense_ripa_races(df):
+def add_standardized_race(df, race_col):
     """
-    The RJA prosecution data is often segmented into 
-    "Latinx, White, Black, Asian, Other"
-    So collapse the following from the RIPA data into the "Other" category
-    "Middle Eastern/South Asian, Multiracial, Native American, Pacific Islander"
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        RIPA policing dataframe
-
-    Returns
-    -------
-    pandas.DataFrame
-        Copy of df with race categories collapsed
+    Add race_std column that standardizes race labels across
+    policing and prosecution datasets.
     """
-
-    # Selected RIPA race categories to combine into "Other"
-    to_other = [
-        "Middle Eastern/South Asian",
-        "Multiracial",
-        "Native American",
-        "Pacific Islander",
-    ]
-
-    out = df.copy()
-    out["RAE_FULL"] = out["RAE_FULL"].replace(to_other, "Other")
-
-    return out
-
-
-def add_search_and_hit_indicators(df):
-    """
-    Add binary indicators for whether a search occurred and whether a hit occurred
-    in RIPA policing data.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        RIPA policing dataframe
-
-    Returns
-    -------
-    pandas.DataFrame
-        Copy of df with SEARCHED and HIT columns added
-    """
-
-    # Columns that count as contraband found
-    contraband_cols = [
-        "CED_FIREARM",
-        "CED_AMMUNITION",
-        "CED_WEAPON",
-        "CED_DRUGS",
-        "CED_ALCOHOL",
-        "CED_MONEY",
-        "CED_DRUG_PARAPHERNALIA",
-        "CED_STOLEN_PROP",
-        "CED_ELECT_DEVICE",
-        "CED_OTHER_CONTRABAND",
-    ]
 
     out = df.copy()
 
-    # Any search occurred
-    out["SEARCHED"] = (
-        (out["ADS_SEARCH_PERSON"] == 1)
-        | (out["ADS_SEARCH_PROPERTY"] == 1)
-    ).astype(int)
-
-    # Any contraband found
-    out["HIT"] = (out[contraband_cols].sum(axis=1) > 0).astype(int)
-
-    return out
-
-
-def policing_table_for_year(policing, year):
-    """
-    Build a race-grouped policing summary table for one year.
-
-    Definitions
-    -----------
-    - Search Rate = searches / stops
-      (How often a stop results in a search)
-    - Hit Rate = hits / searches
-      (How often a search finds any contraband)
-    """
-
-    # Select only the year and group per race
-    d = policing[policing["YEAR"] == year]
-    g = d.groupby("RAE_FULL")
-
-    search_count = g["SEARCHED"].sum()
-    hit_count = g["HIT"].sum()
-    stop_count = g.size()
-
-    out = pd.DataFrame({
-        "Search Count": search_count,                 # Number of stops resulting in a search
-        "Hit Count": hit_count,                       # Number of searches with a hit (contraband found)
-        "Stop Count": stop_count,                     # Total number of stops for that race in that year
-        "Search Rate": search_count / stop_count,     # searches / stops
-        "Hit Rate": hit_count / search_count,         # hits / searches
-    })
-
-    # Redefine the index to clarify that these are perceived race columns by the participating officer
-    out.index.name = "Perceived Race"
-    return out
-
-
-def policing_tables_by_year(policing, years):
-    """
-    Build policing tables for multiple years. Returns {year: table}.
-    """
-    return {
-        yr: policing_table_for_year(
-            policing,
-            yr
-        )
-        for yr in years
+    mapping = {
+        "Hispanic": "Hispanic/Latino",
+        "Latinx": "Hispanic/Latino",
+        "Black": "Black/African American",
+        "Asian": "Asian",
+        "White": "White",
     }
+
+    out["race_std"] = (
+        out[race_col]
+        .map(mapping)
+        .fillna("Other")
+    )
+
+    return out
 
 
 def census_rollup(census_relabeled):
@@ -212,106 +114,122 @@ def census_rollup(census_relabeled):
     })
 
 
-def add_per_capita_rates(policing_table, census_coarse):
+def policing_summary_table(df, census):
     """
-    Add per-capita columns (per 1000 people) to a policing table indexed by race.
+    Build a race × year policing summary table that includes:
+    - Stop Count
+    - Search Count
+    - Hit Count
+    - Search Rate
+    - Hit Rate
+    - Stops per 1,000
+    - Searches per 1,000
+    - Hits per 1,000
     """
-    out = policing_table.copy()
 
-    # Gives the census values in the same order as in the policing table
-    pop = census_coarse.reindex(out.index)
+    # Group by year and race
+    g = df.groupby(["year", "race_std"])
 
-    # Number to divide by
+    summary = g.agg(
+        Stop_Count=("action_any_search", "size"),
+        Search_Count=("action_any_search", "sum"),
+        Hit_Count=("contraband_any", "sum"),
+    ).reset_index()
+
+    # Rename columns
+    summary = summary.rename(columns={
+        "year": "Year",
+        "race_std": "Perceived Race",
+        "Stop_Count": "Stop Count",
+        "Search_Count": "Search Count",
+        "Hit_Count": "Hit Count",
+    })
+
+    # Conditional rates
+    summary["Search Rate"] = summary["Search Count"] / summary["Stop Count"]
+    summary["Hit Rate"] = summary["Hit Count"] / summary["Search Count"]
+
+    # Add population
+    summary["Population"] = summary["Perceived Race"].map(census)
+
+    # Per-capita rates (per 1,000 residents)
     per = 1000
+    summary["Stops per 1,000"] = (summary["Stop Count"] / summary["Population"]) * per
+    summary["Searches per 1,000"] = (summary["Search Count"] / summary["Population"]) * per
+    summary["Hits per 1,000"] = (summary["Hit Count"] / summary["Population"]) * per
 
-    out[f"Searches per {int(per):,}"] = (out["Search Count"] / pop) * per
-    out[f"Hits per {int(per):,}"] = (out["Hit Count"] / pop) * per
-    out[f"Stops per {int(per):,}"] = (out["Stop Count"] / pop) * per
-
-    return out
+    return summary
 
 
-def add_per_capita_rates_by_year(tables_by_year, census_coarse):
+def compute_prosecution_rates(prosecution, convicted_col, enhancement_col):
     """
-    Apply per-capita columns to each year's policing table.
+    Build a race × year prosecution summary table that includes:
+    - Total Prosecution Cases
+    - Prosecution Rate
+    - Enhancement Rate
     """
-    return {yr: add_per_capita_rates(t, census_coarse) for yr, t in tables_by_year.items()}
 
+    # Rename standardized race column
+    prosecution = prosecution.rename(columns={"race_std": "Canonical Race"})
 
-def concat_policing_tables(tables_by_year):
-    """
-    Convert {year: table} into one long dataframe with a Year column.
-    """
-    frames = []
-    for yr, t in sorted(tables_by_year.items()):
-        frames.append(t.reset_index().assign(**{"Year": yr}))
-    return pd.concat(frames, ignore_index=True)
-
-
-def compute_prosecution_rates(prosecution, race_col, year_col, convicted_col, enhancement_col):
-    
-    # Number of convictions out of all charged cases
+    # Conviction / prosecution rate
     conviction_rates = (
         prosecution
-        .groupby([race_col, year_col])[convicted_col]
-        .agg(total_cases="count", conviction_rate="mean")
+        .groupby(["Canonical Race", "Year"])[convicted_col]
+        .agg(
+            Total_Prosecution_Cases="size",
+            Prosecution_Rate="mean"
+        )
         .reset_index()
     )
 
-    # Number of enhanced cases out of all charged cases
+    # Enhancement rate
     enhancement_rates = (
         prosecution
-        .groupby([race_col, year_col])[enhancement_col]
-        .agg(total_cases="count", enhancement_rate="mean")
+        .groupby(["Canonical Race", "Year"])[enhancement_col]
+        .agg(
+            Enhancement_Rate="mean"
+        )
         .reset_index()
     )
 
-    # Create one big table with the conviction and enhancement rate for each race x year
+    # Merge both
     prosecution_rates = conviction_rates.merge(
-        enhancement_rates[[race_col, year_col, "enhancement_rate"]],
-        on=[race_col, year_col],
+        enhancement_rates,
+        on=["Canonical Race", "Year"],
         how="left",
     )
+
+    # Remove underscores for cleaner presentation
+    prosecution_rates = prosecution_rates.rename(columns={
+        "Total_Prosecution_Cases": "Total Prosecution Cases",
+        "Prosecution_Rate": "Prosecution Rate",
+        "Enhancement_Rate": "Enhancement Rate",
+    })
 
     return prosecution_rates
 
 
-def merge_policing_with_prosecution(policing_all, prosecution_rates, pros_race_col, pros_year_col):
+def merge_policing_with_prosecution(policing, prosecution):
     """
-    Merge policing and prosecution tables using standardized policing columns for race.
+    Merge policing and prosecution summary tables by race and year.
     """
 
-    # Mapping so that policing and prosecution have same labels for same racial/ethnic groups
-    race_mapping = {
-        "Latinx": "Hispanic/Latino",
-        "Black": "Black/African American",
-    }
-
-    # Creates a column that maps each prosecution race to its equivalent policing race
-    pros = prosecution_rates.copy()
-    pros["police_equivalent_race"] = pros[pros_race_col].replace(race_mapping)
-
-    # Merge the policing and prosecution tables together
-    analysis = policing_all.merge(
-        pros,
+    analysis = policing.merge(
+        prosecution,
         left_on=["Perceived Race", "Year"],
-        right_on=["police_equivalent_race", pros_year_col],
+        right_on=["Canonical Race", "Year"],
         how="left",
-    ).rename(columns={
-        "total_cases": "Total Prosecution Cases",
-        pros_race_col: "Canonical Prosecution Race",
-        "conviction_rate": "Conviction Rate",
-        "enhancement_rate": "Enhancement Rate",
-    })
+    )
 
-    # Only drop helper column of the police equivalent race
-    drop_cols = ["police_equivalent_race"]
-    if pros_year_col != "Year":
-        drop_cols.append(pros_year_col)
+    # Rename policing race column to "Race"
+    analysis = analysis.rename(columns={"Perceived Race": "Race"})
 
-    analysis = analysis.drop(columns=drop_cols, errors="ignore")
+    # Drop duplicate race column from prosecution after merge
+    analysis = analysis.drop(columns=["Canonical Race"], errors="ignore")
 
     return analysis
+
 
 
 def add_disparity_metrics(analysis):
@@ -333,7 +251,7 @@ def add_disparity_metrics(analysis):
         "Searches per 1,000",
         "Search Rate",
         "Hit Rate",
-        "Conviction Rate",
+        "Prosecution Rate",
         "Enhancement Rate",
     ]
 
@@ -342,7 +260,7 @@ def add_disparity_metrics(analysis):
     # Less than 1 is lower rate than White people
     for m in metrics:
         white_ref = (
-            out[out["Perceived Race"] == "White"]
+            out[out["Race"] == "White"]
             .set_index("Year")[m]
         )
         out[f"{m} (White=1)"] = out[m] / out["Year"].map(white_ref)
@@ -362,13 +280,13 @@ def visualization_setup(analysis):
     # Keep plots consistent across runs
     race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian", "Other"]
 
-    out["Perceived Race"] = pd.Categorical(
-        out["Perceived Race"],
+    out["Race"] = pd.Categorical(
+        out["Race"],
         categories=race_order,
         ordered=True,
     )
 
-    out = out.sort_values(["Year", "Perceived Race"])
+    out = out.sort_values(["Year", "Race"])
     return out
 
 
@@ -386,11 +304,11 @@ def visualize_all_disparity_figures(analysis):
     df = analysis.copy()
 
     # Determine race order (prefer categorical categories if available)
-    if pd.api.types.is_categorical_dtype(df["Perceived Race"]):
-        races = list(df["Perceived Race"].cat.categories)
+    if pd.api.types.is_categorical_dtype(df["Race"]):
+        races = list(df["Race"].cat.categories)
     else:
         # fallback: deterministic but may not match your preferred ordering
-        races = sorted(df["Perceived Race"].dropna().unique().tolist())
+        races = sorted(df["Race"].dropna().unique().tolist())
 
     years = sorted(df["Year"].dropna().unique().tolist())
 
@@ -403,7 +321,7 @@ def visualize_all_disparity_figures(analysis):
 
         plt.figure(figsize=(8, 5))
         for race in races:
-            d = df[df["Perceived Race"] == race].sort_values("Year")
+            d = df[df["Race"] == race].sort_values("Year")
             if len(d) > 0 and d[y_col].notna().any():
                 plt.plot(d["Year"], d[y_col], marker="o", label=race)
 
@@ -470,7 +388,7 @@ def visualize_all_disparity_figures(analysis):
     # --- 3) Prosecution outcomes over time ---
     _line_chart(
         y_col="Conviction Rate",
-        title=f"Conviction Rate by Perceived Race ({years[0]}–{years[-1]})",
+        title=f"Conviction Rate by Canonical Race ({years[0]}–{years[-1]})",
         ylabel="Conviction Rate",
         caption=(
             f"This figure shows conviction rates for prosecuted cases by racial group from {years[0]} to {years[-1]}. "
@@ -480,7 +398,7 @@ def visualize_all_disparity_figures(analysis):
 
     _line_chart(
         y_col="Enhancement Rate",
-        title=f"Enhancement Rate by Perceived Race ({years[0]}–{years[-1]})",
+        title=f"Enhancement Rate by Canonical Race ({years[0]}–{years[-1]})",
         ylabel="Enhancement Rate",
         caption=(
             f"This figure shows how often cases include sentencing enhancements by racial group from {years[0]} to {years[-1]}. "
@@ -500,12 +418,12 @@ def visualize_all_disparity_figures(analysis):
     ratio_cols = [c for c in ratio_cols if c in latest_df.columns]
 
     if len(latest_df) > 0 and ratio_cols:
-        plot_df = latest_df.set_index("Perceived Race")[ratio_cols].reindex(races)
+        plot_df = latest_df.set_index("Race")[ratio_cols].reindex(races)
 
         plot_df.plot(kind="bar", figsize=(10, 4))
         plt.axhline(1.0)
         plt.title(f"Disparity Ratios in Policing and Prosecution ({latest_year}; White = 1)")
-        plt.xlabel("Perceived Race")
+        plt.xlabel("Race")
         plt.ylabel("Ratio relative to White")
 
         plt.figtext(
@@ -526,8 +444,8 @@ def visualize_all_disparity_figures(analysis):
     # --- 5) Earliest vs latest comparison (only if both years exist and the ratio column exists) ---
     earliest_year = years[0]
     if earliest_year != latest_year and "Stops per 1,000 (White=1)" in df.columns:
-        d_earliest = df[df["Year"] == earliest_year].set_index("Perceived Race")["Stops per 1,000 (White=1)"]
-        d_latest = df[df["Year"] == latest_year].set_index("Perceived Race")["Stops per 1,000 (White=1)"]
+        d_earliest = df[df["Year"] == earliest_year].set_index("Race")["Stops per 1,000 (White=1)"]
+        d_latest = df[df["Year"] == latest_year].set_index("Race")["Stops per 1,000 (White=1)"]
 
         comp = pd.DataFrame({str(earliest_year): d_earliest, str(latest_year): d_latest}).reindex(races)
 
@@ -573,21 +491,16 @@ def visualize(analysis):
          - White-normalized ratios (latest year), if available
          - Earliest vs latest stop disparity ratio, if available
 
-    Notes:
-      - Handles 2021–2022 only (e.g., San Mateo) or 2021–2023 (e.g., Orange) automatically.
-      - Displays only (no saving).
-      - Assumes 'Perceived Race' and 'Year' columns exist.
-      - Uses categorical ordering if 'Perceived Race' is categorical.
     """
     import matplotlib.pyplot as plt  # import locally to avoid 'plt' being shadowed elsewhere
 
     df = analysis.copy()
 
     # Race order (prefer categorical categories if available)
-    if pd.api.types.is_categorical_dtype(df["Perceived Race"]):
-        races = list(df["Perceived Race"].cat.categories)
+    if pd.api.types.is_categorical_dtype(df["Race"]):
+        races = list(df["Race"].cat.categories)
     else:
-        races = sorted(df["Perceived Race"].dropna().unique().tolist())
+        races = sorted(df["Race"].dropna().unique().tolist())
 
     years = sorted(df["Year"].dropna().unique().tolist())
     if not years:
@@ -612,7 +525,7 @@ def visualize(analysis):
         plt.figure(figsize=(8, 5))
 
         for race in races:
-            d = df[df["Perceived Race"] == race].sort_values("Year")
+            d = df[df["Race"] == race].sort_values("Year")
             if len(d) > 0 and d[y_col].notna().any():
                 plt.plot(d["Year"], d[y_col], marker="o", label=race)
 
@@ -656,7 +569,7 @@ def visualize(analysis):
         if not cols:
             return
 
-        plot_df = latest_df.set_index("Perceived Race")[cols].reindex(races)
+        plot_df = latest_df.set_index("Race")[cols].reindex(races)
 
         ax = plot_df.plot(kind="bar", figsize=(10, 4))
         ax.axhline(1.0)

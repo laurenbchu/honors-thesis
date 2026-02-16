@@ -156,600 +156,300 @@ def policing_summary_table(df, census):
     per = 1000
     summary["Stops per 1,000"] = (summary["Stop Count"] / summary["Population"]) * per
     summary["Searches per 1,000"] = (summary["Search Count"] / summary["Population"]) * per
-    summary["Hits per 1,000"] = (summary["Hit Count"] / summary["Population"]) * per
 
     return summary
 
 
-def compute_prosecution_rates(prosecution, convicted_col, enhancement_col):
+def prosecution_rates_by_statute_level(prosecution):
     """
-    Build a race × year prosecution summary table that includes:
-    - Total Prosecution Cases
-    - Prosecution Rate
-    - Enhancement Rate
+    Build a race × year × statute_level prosecution summary table.
+
+    Returns:
+        - Total Charges
+        - Charge Rate
+        - Enhancement Rate
     """
 
-    # Rename standardized race column
-    prosecution = prosecution.rename(columns={"race_std": "Canonical Race"})
+    df = prosecution.copy()
 
-    # Conviction / prosecution rate
-    conviction_rates = (
-        prosecution
-        .groupby(["Canonical Race", "Year"])[convicted_col]
-        .agg(
-            Total_Prosecution_Cases="size",
-            Prosecution_Rate="mean"
-        )
-        .reset_index()
+    # Ensure standardized race column exists
+    if "Canonical Race" not in df.columns and "race_std" in df.columns:
+        df = df.rename(columns={"race_std": "Canonical Race"})
+
+    summary = (
+        df.groupby(["Canonical Race", "Year", "statute_level"])
+          .agg(
+              **{
+                  "Total Charges": ("was_filed_by_da", "size"),
+                  "Charge Rate": ("was_filed_by_da", "mean"),
+                  "Enhancement Rate": ("is_enhancement_charge", "mean"),
+              }
+          )
+          .reset_index()
     )
 
-    # Enhancement rate
-    enhancement_rates = (
-        prosecution
-        .groupby(["Canonical Race", "Year"])[enhancement_col]
-        .agg(
-            Enhancement_Rate="mean"
-        )
-        .reset_index()
-    )
-
-    # Merge both
-    prosecution_rates = conviction_rates.merge(
-        enhancement_rates,
-        on=["Canonical Race", "Year"],
-        how="left",
-    )
-
-    # Remove underscores for cleaner presentation
-    prosecution_rates = prosecution_rates.rename(columns={
-        "Total_Prosecution_Cases": "Total Prosecution Cases",
-        "Prosecution_Rate": "Prosecution Rate",
-        "Enhancement_Rate": "Enhancement Rate",
-    })
-
-    return prosecution_rates
+    return summary
 
 
-def merge_policing_with_prosecution(policing, prosecution):
+def add_white_normalized_ratios(df, race_col="Perceived Race", year_col="Year", metrics=None, strata_cols=None):
     """
-    Merge policing and prosecution summary tables by race and year.
+    Add White-normalized disparity ratios to any table.
+
+    If you have multiple rows per year (e.g., statute_level), pass strata_cols so
+    White is matched within the same Year + strata group.
+
+    Example:
+        add_white_normalized_ratios(prosecution_analysis,
+                                    race_col="Canonical Race",
+                                    strata_cols=["statute_level"],
+                                    metrics=["Charge Rate","Enhancement Rate"])
     """
 
-    analysis = policing.merge(
-        prosecution,
-        left_on=["Perceived Race", "Year"],
-        right_on=["Canonical Race", "Year"],
-        how="left",
-    )
+    out = df.copy()
 
-    # Rename policing race column to "Race"
-    analysis = analysis.rename(columns={"Perceived Race": "Race"})
+    if strata_cols is None:
+        strata_cols = []
 
-    # Drop duplicate race column from prosecution after merge
-    analysis = analysis.drop(columns=["Canonical Race"], errors="ignore")
+    key_cols = [year_col] + list(strata_cols)
 
-    return analysis
+    # If metrics not provided, pick all numeric columns except keys + race
+    if metrics is None:
+        metrics = [
+            c for c in out.columns
+            if c not in ([race_col] + key_cols)
+            and pd.api.types.is_numeric_dtype(out[c])
+        ]
 
+    # White reference table: one row per (Year + strata) with White's metric value
+    white_ref = out[out[race_col] == "White"][key_cols + metrics].copy()
 
+    # Rename metric columns so we can merge them back cleanly
+    rename_map = {m: f"{m} (White)" for m in metrics}
+    white_ref = white_ref.rename(columns=rename_map)
 
-def add_disparity_metrics(analysis):
-    """
-    Add White-normalized disparity ratios to the analysis table.
+    # Merge White reference values back onto everyone by Year (+ strata)
+    out = out.merge(white_ref, on=key_cols, how="left")
 
-    Returns
-    -------
-    pandas.DataFrame
-        Copy of analysis with disparity metrics added
-    """
-
-    out = analysis.copy()
-
-    # Create White-normalized disparity ratios
-    # "How high is this rate for a given group relative to White people?"
-    metrics = [
-        "Stops per 1,000",
-        "Searches per 1,000",
-        "Search Rate",
-        "Hit Rate",
-        "Prosecution Rate",
-        "Enhancement Rate",
-    ]
-
-    # 1 is equal to White people
-    # Greater than 1 is higher rate than White people
-    # Less than 1 is lower rate than White people
+    # Compute ratios
     for m in metrics:
-        white_ref = (
-            out[out["Race"] == "White"]
-            .set_index("Year")[m]
-        )
-        out[f"{m} (White=1)"] = out[m] / out["Year"].map(white_ref)
+        out[f"{m} (White=1)"] = out[m] / out[f"{m} (White)"]
+
+    # Optional: drop the intermediate "(White)" columns
+    out = out.drop(columns=[f"{m} (White)" for m in metrics], errors="ignore")
 
     return out
 
+import pandas as pd
+import matplotlib.pyplot as plt
 
-def visualization_setup(analysis):
+def visualization_setup(df, race_col):
     """
-    Setup for keeping race order consistent and saving plots when needed.
-
-    - Keep plots consistent across runs by enforcing a fixed race order
-    - Sort by Year then Perceived Race
+    Enforce a consistent race order and sort for plotting.
+    race_col should be either:
+      - "Perceived Race" (policing)
+      - "Canonical Race" (prosecution)
     """
-    out = analysis.copy()
+    out = df.copy()
 
-    # Keep plots consistent across runs
     race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian", "Other"]
 
-    out["Race"] = pd.Categorical(
-        out["Race"],
-        categories=race_order,
-        ordered=True,
-    )
+    if race_col in out.columns:
+        out[race_col] = pd.Categorical(out[race_col], categories=race_order, ordered=True)
 
-    out = out.sort_values(["Year", "Race"])
+    if "Year" in out.columns and race_col in out.columns:
+        out = out.sort_values(["Year", race_col])
+
     return out
 
 
-def visualize_all_disparity_figures(analysis):
+def visualize_policing(policing_analysis):
     """
-    Display the full set of policing + prosecution disparity figures.
-
-    Handles:
-      - Counties with 2021–2022 only (e.g., San Mateo)
-      - Counties with 2021–2023 (e.g., Orange)
+    Policing visuals (most relevant):
+      1) Stops per 1,000 by Perceived Race (exposure)
+      2) Searches per 1,000 by Perceived Race (exposure)
+      3) Search Rate by Perceived Race (decision)
+      4) Hit Rate by Perceived Race (outcome test)
+      5) Latest-year disparity ratios (White=1) for Stops/Searches/Search Rate/Hit Rate (summary)
     """
+    df = policing_analysis.copy()
+    race_col = "Perceived Race"
 
-    df = analysis.copy()
+    df = visualization_setup(df, race_col=race_col)
 
-    # Determine race order (prefer categorical categories if available)
-    if pd.api.types.is_categorical_dtype(df["Race"]):
-        races = list(df["Race"].cat.categories)
+    if pd.api.types.is_categorical_dtype(df[race_col]):
+        races = list(df[race_col].cat.categories)
     else:
-        # fallback: deterministic but may not match your preferred ordering
-        races = sorted(df["Race"].dropna().unique().tolist())
+        races = sorted(df[race_col].dropna().unique().tolist())
 
     years = sorted(df["Year"].dropna().unique().tolist())
+    if not years:
+        raise ValueError("No years found in policing_analysis['Year'].")
 
     def _set_year_ticks():
         plt.xticks(years)
 
-    def _line_chart(y_col: str, title: str, ylabel: str, caption: str) -> None:
+    def _line_chart(y_col, title, ylabel, caption):
         if y_col not in df.columns:
             return
 
         plt.figure(figsize=(8, 5))
         for race in races:
-            d = df[df["Race"] == race].sort_values("Year")
+            d = df[df[race_col] == race].sort_values("Year")
             if len(d) > 0 and d[y_col].notna().any():
                 plt.plot(d["Year"], d[y_col], marker="o", label=race)
 
         plt.title(title)
         plt.xlabel("Year")
         plt.ylabel(ylabel)
-
-        # IMPORTANT: this is policing race labeling (perceived race)
         plt.legend(title="Perceived Race")
-
         _set_year_ticks()
 
-        plt.figtext(
-            0.5, -0.05,
-            caption,
-            ha="center",
-            fontsize=10,
-            wrap=True
-        )
-
+        plt.figtext(0.5, -0.05, caption, ha="center", fontsize=10, wrap=True)
         plt.tight_layout()
         plt.show()
 
-    # --- 1) Exposure over time (per-capita) ---
+    # --- Core policing figures ---
     _line_chart(
-        y_col="Stops per 1,000",
+        "Stops per 1,000",
         title=f"Stops per 1,000 Residents by Perceived Race ({years[0]}–{years[-1]})",
         ylabel="Stops per 1,000 (2020 Census baseline)",
-        caption=(
-            f"This figure shows how often people in each racial group are stopped overall from {years[0]} to {years[-1]}. "
-            "Rates are expressed as stops per 1,000 residents, which adjusts for differences in population sizes."
-        ),
+        caption="Population-normalized exposure to police stops over time."
     )
 
     _line_chart(
-        y_col="Searches per 1,000",
+        "Searches per 1,000",
         title=f"Searches per 1,000 Residents by Perceived Race ({years[0]}–{years[-1]})",
         ylabel="Searches per 1,000 (2020 Census baseline)",
-        caption=(
-            f"This figure shows how often people in each racial group are searched overall from {years[0]} to {years[-1]}. "
-            "Searches are reported per 1,000 residents, reflecting population-level exposure to police searches."
-        ),
+        caption="Population-normalized exposure to police searches over time."
     )
 
-    # --- 2) Policing decision-making (conditional rates) ---
     _line_chart(
-        y_col="Search Rate",
+        "Search Rate",
         title=f"Search Rate by Perceived Race ({years[0]}–{years[-1]})",
         ylabel="Search Rate",
-        caption=(
-            f"This figure shows the likelihood that a police stop results in a search for each racial group from {years[0]} to {years[-1]}. "
-            "The search rate reflects police decision-making conditional on a stop, rather than overall exposure."
-        ),
+        caption="Conditional on being stopped: how often stops turn into searches."
     )
 
     _line_chart(
-        y_col="Hit Rate",
+        "Hit Rate",
         title=f"Hit Rate by Perceived Race ({years[0]}–{years[-1]})",
         ylabel="Hit Rate",
-        caption=(
-            f"This figure shows how often police stops result in contraband being found for each racial group from {years[0]} to {years[-1]}. "
-            "The hit rate reflects the frequency of successful searches given police contact."
-        ),
+        caption="Outcome test (conditional on search): how often searches yield contraband."
     )
 
-    # --- 3) Prosecution outcomes over time ---
-    _line_chart(
-        y_col="Prosecution Rate",
-        title=f"Prosecution Rate by Race ({years[0]}–{years[-1]})",
-        ylabel="Prosecution Rate",
-        caption=(
-            f"This figure shows prosecution rates for cases by racial group from {years[0]} to {years[-1]}. "
-            "Rates reflect the proportion of cases resulting in the outcome you defined as the prosecution rate."
-        ),
-    )
-
-    _line_chart(
-        y_col="Enhancement Rate",
-        title=f"Enhancement Rate by Race ({years[0]}–{years[-1]})",
-        ylabel="Enhancement Rate",
-        caption=(
-            f"This figure shows how often cases include sentencing enhancements by racial group from {years[0]} to {years[-1]}. "
-            "Enhancement rates reflect prosecutorial decisions following case filing."
-        ),
-    )
-
-    # --- 4) Headline disparities: White-normalized ratios (latest year) ---
+    # --- Summary: disparity ratios (latest year) ---
     latest_year = years[-1]
     latest_df = df[df["Year"] == latest_year].copy()
 
     ratio_cols = [
         "Stops per 1,000 (White=1)",
         "Searches per 1,000 (White=1)",
-        "Prosecution Rate (White=1)",
-        "Enhancement Rate (White=1)",
+        "Search Rate (White=1)",
+        "Hit Rate (White=1)",
     ]
     ratio_cols = [c for c in ratio_cols if c in latest_df.columns]
 
-    if len(latest_df) > 0 and ratio_cols:
-        plot_df = latest_df.set_index("Race")[ratio_cols].reindex(races)
+    if not latest_df.empty and ratio_cols:
+        plot_df = latest_df.set_index(race_col)[ratio_cols].reindex(races)
 
         plot_df.plot(kind="bar", figsize=(10, 4))
         plt.axhline(1.0)
-
-        plt.title(f"Disparity Ratios in Policing and Prosecution ({latest_year}; White = 1)")
-        plt.xlabel("Perceived Race")  # policing label convention
+        plt.title(f"Policing Disparity Ratios ({latest_year}; White = 1)")
+        plt.xlabel("Race")
         plt.ylabel("Ratio relative to White")
-
-        plt.figtext(
-            0.5, -0.08,
-            (
-                f"This figure compares policing and prosecution outcomes across racial groups in {latest_year}, normalized to White residents "
-                "(White = 1). Values greater than 1 indicate higher rates relative to White residents, while values below 1 indicate lower rates."
-            ),
-            ha="center",
-            fontsize=10,
-            wrap=True
-        )
-
-        plt.xticks(rotation=30, ha="right")
-        plt.tight_layout()
-        plt.show()
-
-    # --- 5) Earliest vs latest comparison (only if both years exist and the ratio column exists) ---
-    earliest_year = years[0]
-    if earliest_year != latest_year and "Stops per 1,000 (White=1)" in df.columns:
-        d_earliest = df[df["Year"] == earliest_year].set_index("Race")["Stops per 1,000 (White=1)"]
-        d_latest = df[df["Year"] == latest_year].set_index("Race")["Stops per 1,000 (White=1)"]
-
-        comp = pd.DataFrame({str(earliest_year): d_earliest, str(latest_year): d_latest}).reindex(races)
-
-        comp.plot(kind="bar", figsize=(8, 4))
-        plt.axhline(1.0)
-
-        plt.title(f"Stop Rate Disparity Ratio Change ({earliest_year} vs {latest_year}; White = 1)")
-        plt.xlabel("Perceived Race")  # policing label convention
-        plt.ylabel("Ratio relative to White")
-
-        plt.figtext(
-            0.5, -0.08,
-            (
-                f"This figure compares stop rate disparities in {earliest_year} and {latest_year} using White residents as the reference group (White = 1). "
-                "Changes over time indicate whether racial disparities in police stops widened or narrowed."
-            ),
-            ha="center",
-            fontsize=10,
-            wrap=True
-        )
-
         plt.xticks(rotation=30, ha="right")
         plt.tight_layout()
         plt.show()
 
 
-def visualize(analysis):
+def visualize_prosecution(prosecution_analysis):
     """
-    Visualize policing + prosecution disparities using the recommended hierarchy:
-
-      A) Exposure (context)
-         - Stops per 1,000
-         - Searches per 1,000
-
-      B) Policing decision + outcome tests (core)
-         - Search Rate (conditional on stop)
-         - Hit Rate (OUTCOME TEST; conditional on search)
-
-      C) Prosecution outcome tests (core)
-         - Prosecution Rate (OUTCOME TEST; conditional on case filed / your definition)
-         - Enhancement Rate (OUTCOME TEST; conditional on case filed)
-
-      D) Summary comparisons (supporting)
-         - White-normalized ratios (latest year), if available
-         - Earliest vs latest stop disparity ratio, if available
+    Prosecution visuals (most relevant):
+      For EACH statute_level (Felony/Misdemeanor/Infraction):
+        1) Charge Rate by Canonical Race over time
+        2) Enhancement Rate by Canonical Race over time
+        3) Latest-year disparity ratios (White=1) for Charge/Enhancement (summary)
     """
-    import matplotlib.pyplot as plt  # import locally to avoid 'plt' being shadowed elsewhere
+    df = prosecution_analysis.copy()
+    race_col = "Canonical Race"
 
-    df = analysis.copy()
+    df = visualization_setup(df, race_col=race_col)
 
-    # Race order (prefer categorical categories if available)
-    if pd.api.types.is_categorical_dtype(df["Race"]):
-        races = list(df["Race"].cat.categories)
+    if pd.api.types.is_categorical_dtype(df[race_col]):
+        races = list(df[race_col].cat.categories)
     else:
-        races = sorted(df["Race"].dropna().unique().tolist())
+        races = sorted(df[race_col].dropna().unique().tolist())
 
     years = sorted(df["Year"].dropna().unique().tolist())
     if not years:
-        raise ValueError("No years found in analysis['Year'].")
+        raise ValueError("No years found in prosecution_analysis['Year'].")
 
-    year_span = f"{years[0]}–{years[-1]}"
+    statute_levels = sorted(df["statute_level"].dropna().unique().tolist())
+    if not statute_levels:
+        raise ValueError("No statute_level values found in prosecution_analysis['statute_level'].")
 
     def _set_year_ticks():
         plt.xticks(years)
 
-    def _line_chart(
-        y_col: str,
-        *,
-        title: str,
-        subtitle: str | None,
-        ylabel: str,
-        caption: str,
-    ) -> None:
-        if y_col not in df.columns:
+    def _line_chart(dsub, y_col, title, ylabel, caption):
+        if y_col not in dsub.columns:
             return
 
         plt.figure(figsize=(8, 5))
-
         for race in races:
-            d = df[df["Race"] == race].sort_values("Year")
+            d = dsub[dsub[race_col] == race].sort_values("Year")
             if len(d) > 0 and d[y_col].notna().any():
                 plt.plot(d["Year"], d[y_col], marker="o", label=race)
 
-        if subtitle:
-            plt.suptitle(title, y=1.02)
-            plt.title(subtitle, fontsize=10)
-        else:
-            plt.title(title)
-
+        plt.title(title)
         plt.xlabel("Year")
         plt.ylabel(ylabel)
-
-        if "Stop" in y_col or "Search" in y_col or "Hit" in y_col:
-            plt.legend(title="Perceived Race")
-        else:
-            plt.legend(title="Race")
-
-
+        plt.legend(title="Race")  # IMPORTANT: not "Perceived Race"
         _set_year_ticks()
 
-        plt.figtext(
-            0.5, -0.05,
-            caption,
-            ha="center",
-            fontsize=10,
-            wrap=True
-        )
-
+        plt.figtext(0.5, -0.05, caption, ha="center", fontsize=10, wrap=True)
         plt.tight_layout()
         plt.show()
 
-    def _bar_chart_latest_year(
-        cols: list[str],
-        *,
-        title: str,
-        subtitle: str | None,
-        ylabel: str,
-        caption: str,
-    ) -> None:
+    for lvl in statute_levels:
+        dsub = df[df["statute_level"] == lvl].copy()
+        if dsub.empty:
+            continue
+
+        _line_chart(
+            dsub,
+            "Charge Rate",
+            title=f"Charge Rate by Race ({lvl}; {years[0]}–{years[-1]})",
+            ylabel="Charge Rate",
+            caption=f"Charge outcomes restricted to {lvl} charges."
+        )
+
+        _line_chart(
+            dsub,
+            "Enhancement Rate",
+            title=f"Enhancement Rate by Race ({lvl}; {years[0]}–{years[-1]})",
+            ylabel="Enhancement Rate",
+            caption=f"Enhancement outcomes restricted to {lvl} charges."
+        )
+
+        # Latest-year ratios for this statute level
         latest_year = years[-1]
-        latest_df = df[df["Year"] == latest_year].copy()
-        if latest_df.empty:
-            return
+        latest_df = dsub[dsub["Year"] == latest_year].copy()
 
-        cols = [c for c in cols if c in latest_df.columns]
-        if not cols:
-            return
-
-        plot_df = latest_df.set_index("Race")[cols].reindex(races)
-
-        ax = plot_df.plot(kind="bar", figsize=(10, 4))
-        ax.axhline(1.0)
-
-        if subtitle:
-            plt.suptitle(title, y=1.02)
-            plt.title(subtitle, fontsize=10)
-        else:
-            plt.title(title)
-
-        plt.xlabel("Race")
-        plt.ylabel(ylabel)
-
-        plt.figtext(
-            0.5, -0.08,
-            caption,
-            ha="center",
-            fontsize=10,
-            wrap=True
-        )
-
-        plt.xticks(rotation=30, ha="right")
-        plt.tight_layout()
-        plt.show()
-
-    def _bar_chart_earliest_vs_latest(
-        col: str,
-        *,
-        title: str,
-        subtitle: str | None,
-        ylabel: str,
-        caption: str,
-    ) -> None:
-        if col not in df.columns:
-            return
-        if len(years) < 2:
-            return
-
-        earliest_year = years[0]
-        latest_year = years[-1]
-        if earliest_year == latest_year:
-            return
-
-        d_earliest = df[df["Year"] == earliest_year].set_index("Race")[col]
-        d_latest = df[df["Year"] == latest_year].set_index("Race")[col]
-
-        comp = pd.DataFrame({str(earliest_year): d_earliest, str(latest_year): d_latest}).reindex(races)
-
-        ax = comp.plot(kind="bar", figsize=(8, 4))
-        ax.axhline(1.0)
-
-        if subtitle:
-            plt.suptitle(title, y=1.02)
-            plt.title(subtitle, fontsize=10)
-        else:
-            plt.title(title)
-
-        plt.xlabel("Race")
-        plt.ylabel(ylabel)
-
-        plt.figtext(
-            0.5, -0.08,
-            caption,
-            ha="center",
-            fontsize=10,
-            wrap=True
-        )
-
-        plt.xticks(rotation=30, ha="right")
-        plt.tight_layout()
-        plt.show()
-
-    # =========================================================
-    # A) Exposure (context)
-    # =========================================================
-    _line_chart(
-        "Stops per 1,000",
-        title=f"Stops per 1,000 Residents by Perceived Race ({year_span})",
-        subtitle="Exposure (context): population-normalized stop frequency",
-        ylabel="Stops per 1,000 (2020 Census baseline)",
-        caption=(
-            f"This figure shows how often people in each racial group are stopped overall from {years[0]} to {years[-1]}. "
-            "Rates are expressed as stops per 1,000 residents, which adjusts for differences in population sizes."
-        ),
-    )
-
-    _line_chart(
-        "Searches per 1,000",
-        title=f"Searches per 1,000 Residents by Perceived Race ({year_span})",
-        subtitle="Exposure (context): population-normalized search frequency",
-        ylabel="Searches per 1,000 (2020 Census baseline)",
-        caption=(
-            f"This figure shows how often people in each racial group are searched overall from {years[0]} to {years[-1]}. "
-            "Searches are reported per 1,000 residents, reflecting population-level exposure to police searches."
-        ),
-    )
-
-    # =========================================================
-    # B) Policing decision + outcome tests (core)
-    # =========================================================
-    _line_chart(
-        "Search Rate",
-        title=f"Search Rate by Perceived Race ({year_span})",
-        subtitle="Conditional on stop: searches ÷ stops",
-        ylabel="Search Rate",
-        caption=(
-            f"This figure shows the likelihood that a police stop results in a search for each racial group from {years[0]} to {years[-1]}. "
-            "The search rate reflects police decision-making conditional on a stop, rather than overall exposure."
-        ),
-    )
-
-    _line_chart(
-        "Hit Rate",
-        title=f"Hit Rate by Perceived Race ({year_span})",
-        subtitle="Outcome test (conditional on search): hits ÷ searches",
-        ylabel="Hit Rate",
-        caption=(
-            f"This figure shows how often police searches yield contraband for each racial group from {years[0]} to {years[-1]}. "
-            "Because it is conditional on searches, the hit rate functions as an outcome test of whether searches are equally productive across groups."
-        ),
-    )
-
-    # =========================================================
-    # C) Prosecution outcome tests (core)
-    # =========================================================
-    _line_chart(
-        "Prosecution Rate",
-        title=f"Prosecution Rate by Race ({year_span})",
-        subtitle="Outcome test (conditional on case filed): prosecutions ÷ cases",
-        ylabel="Prosecution Rate",
-        caption=(
-            f"This figure shows prosecution rates for cases by racial group from {years[0]} to {years[-1]}. "
-            "Rates reflect the proportion of cases resulting in the outcome you defined as the prosecution rate."
-        ),
-    )
-
-    _line_chart(
-        "Enhancement Rate",
-        title=f"Enhancement Rate by Race ({year_span})",
-        subtitle="Outcome test (conditional on case filed): enhancements ÷ cases",
-        ylabel="Enhancement Rate",
-        caption=(
-            f"This figure shows how often cases include sentencing enhancements by racial group from {years[0]} to {years[-1]}. "
-            "Enhancement rates reflect prosecutorial decisions following case filing."
-        ),
-    )
-
-    # =========================================================
-    # D) Summary comparisons (supporting)
-    # =========================================================
-    _bar_chart_latest_year(
-        cols=[
-            "Stops per 1,000 (White=1)",
-            "Searches per 1,000 (White=1)",
-            "Prosecution Rate (White=1)",
+        ratio_cols = [
+            "Charge Rate (White=1)",
             "Enhancement Rate (White=1)",
-        ],
-        title=f"Disparity Ratios in Policing and Prosecution ({years[-1]}; White = 1)",
-        subtitle="Summary comparison: each metric normalized to White residents (White = 1)",
-        ylabel="Ratio relative to White",
-        caption=(
-            f"This figure compares policing and prosecution outcomes across racial groups in {years[-1]}, normalized to White residents "
-            "(White = 1). Values greater than 1 indicate higher rates relative to White residents, while values below 1 indicate lower rates."
-        ),
-    )
+        ]
+        ratio_cols = [c for c in ratio_cols if c in latest_df.columns]
 
-    _bar_chart_earliest_vs_latest(
-        col="Stops per 1,000 (White=1)",
-        title=f"Stop Rate Disparity Ratio Change ({years[0]} vs {years[-1]}; White = 1)",
-        subtitle="Summary comparison over time: earliest vs latest year available",
-        ylabel="Ratio relative to White",
-        caption=(
-            f"This figure compares stop rate disparities in {years[0]} and {years[-1]} using White residents as the reference group (White = 1). "
-            "Changes over time indicate whether racial disparities in police stops widened or narrowed."
-        ),
-    )
+        if not latest_df.empty and ratio_cols:
+            plot_df = latest_df.set_index(race_col)[ratio_cols].reindex(races)
+
+            plot_df.plot(kind="bar", figsize=(8, 4))
+            plt.axhline(1.0)
+            plt.title(f"Prosecution Disparity Ratios ({lvl}, {latest_year}; White = 1)")
+            plt.xlabel("Race")  # IMPORTANT: x-axis is Race
+            plt.ylabel("Ratio relative to White")
+            plt.xticks(rotation=30, ha="right")
+            plt.tight_layout()
+            plt.show()

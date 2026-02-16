@@ -239,9 +239,6 @@ def add_white_normalized_ratios(df, race_col="Perceived Race", year_col="Year", 
 
     return out
 
-import pandas as pd
-import matplotlib.pyplot as plt
-
 def visualization_setup(df, race_col):
     """
     Enforce a consistent race order and sort for plotting.
@@ -453,3 +450,66 @@ def visualize_prosecution(prosecution_analysis):
             plt.xticks(rotation=30, ha="right")
             plt.tight_layout()
             plt.show()
+
+def plot_pipeline_disparity_summary(policing_analysis, prosecution_analysis):
+    """
+    Create a single summary visualization comparing White-normalized
+    disparity ratios across the criminal justice pipeline.
+
+    Uses latest available year.
+    """
+
+    # --- Get latest year ---
+    latest_year = policing_analysis["Year"].max()
+
+    # Filter to latest year
+    pol = policing_analysis[policing_analysis["Year"] == latest_year].copy()
+    pros = prosecution_analysis[prosecution_analysis["Year"] == latest_year].copy()
+
+    # For prosecution, collapse statute levels (average across levels)
+    pros_summary = (
+        pros.groupby("Canonical Race")[
+            ["Charge Rate (White=1)", "Enhancement Rate (White=1)"]
+        ]
+        .mean()
+        .reset_index()
+    )
+
+    # Merge policing + prosecution disparities
+    summary = pol.merge(
+        pros_summary,
+        left_on="Perceived Race",
+        right_on="Canonical Race",
+        how="left"
+    )
+
+    # Keep only necessary columns
+    summary = summary[[
+        "Perceived Race",
+        "Stops per 1,000 (White=1)",
+        "Search Rate (White=1)",
+        "Hit Rate (White=1)",
+        "Charge Rate (White=1)",
+        "Enhancement Rate (White=1)"
+    ]]
+
+    summary = summary.rename(columns={
+        "Perceived Race": "Race"
+    })
+
+    summary = summary.set_index("Race")
+
+    # Remove White (reference group)
+    summary = summary[summary.index != "White"]
+
+    # --- Plot ---
+    summary.plot(kind="bar", figsize=(12, 6))
+
+    plt.axhline(1.0, linestyle="--")
+    plt.ylabel("Disparity Ratio (White = 1)")
+    plt.xlabel("Race")
+    plt.title(f"Racial Disparities Across Criminal Justice Stages in Orange County ({latest_year})")
+
+    plt.xticks(rotation=30, ha="right")
+    plt.tight_layout()
+    plt.show()

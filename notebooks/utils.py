@@ -191,54 +191,6 @@ def prosecution_rates_by_statute_level(prosecution):
     return summary
 
 
-def add_white_normalized_ratios(df, race_col="Perceived Race", year_col="Year", metrics=None, strata_cols=None):
-    """
-    Add White-normalized disparity ratios to any table.
-
-    If you have multiple rows per year (e.g., statute_level), pass strata_cols so
-    White is matched within the same Year + strata group.
-
-    Example:
-        add_white_normalized_ratios(prosecution_analysis,
-                                    race_col="Canonical Race",
-                                    strata_cols=["statute_level"],
-                                    metrics=["Charge Rate","Enhancement Rate"])
-    """
-
-    out = df.copy()
-
-    if strata_cols is None:
-        strata_cols = []
-
-    key_cols = [year_col] + list(strata_cols)
-
-    # If metrics not provided, pick all numeric columns except keys + race
-    if metrics is None:
-        metrics = [
-            c for c in out.columns
-            if c not in ([race_col] + key_cols)
-            and pd.api.types.is_numeric_dtype(out[c])
-        ]
-
-    # White reference table: one row per (Year + strata) with White's metric value
-    white_ref = out[out[race_col] == "White"][key_cols + metrics].copy()
-
-    # Rename metric columns so we can merge them back cleanly
-    rename_map = {m: f"{m} (White)" for m in metrics}
-    white_ref = white_ref.rename(columns=rename_map)
-
-    # Merge White reference values back onto everyone by Year (+ strata)
-    out = out.merge(white_ref, on=key_cols, how="left")
-
-    # Compute ratios
-    for m in metrics:
-        out[f"{m} (White=1)"] = out[m] / out[f"{m} (White)"]
-
-    # Optional: drop the intermediate "(White)" columns
-    out = out.drop(columns=[f"{m} (White)" for m in metrics], errors="ignore")
-
-    return out
-
 def visualization_setup(df, race_col):
     """
     Enforce a consistent race order and sort for plotting.
@@ -334,30 +286,6 @@ def visualize_policing(policing_analysis):
         caption="Outcome test (conditional on search): how often searches yield contraband."
     )
 
-    # --- Summary: disparity ratios (latest year) ---
-    latest_year = years[-1]
-    latest_df = df[df["Year"] == latest_year].copy()
-
-    ratio_cols = [
-        "Stops per 1,000 (White=1)",
-        "Searches per 1,000 (White=1)",
-        "Search Rate (White=1)",
-        "Hit Rate (White=1)",
-    ]
-    ratio_cols = [c for c in ratio_cols if c in latest_df.columns]
-
-    if not latest_df.empty and ratio_cols:
-        plot_df = latest_df.set_index(race_col)[ratio_cols].reindex(races)
-
-        plot_df.plot(kind="bar", figsize=(10, 4))
-        plt.axhline(1.0)
-        plt.title(f"Policing Disparity Ratios ({latest_year}; White = 1)")
-        plt.xlabel("Race")
-        plt.ylabel("Ratio relative to White")
-        plt.xticks(rotation=30, ha="right")
-        plt.tight_layout()
-        plt.show()
-
 
 def visualize_prosecution(prosecution_analysis):
     """
@@ -408,18 +336,10 @@ def visualize_prosecution(prosecution_analysis):
         plt.tight_layout()
         plt.show()
 
-    for lvl in statute_levels:
+    for lvl in ["Felony", "Misdemeanor"]:
         dsub = df[df["statute_level"] == lvl].copy()
         if dsub.empty:
             continue
-
-        _line_chart(
-            dsub,
-            "Charge Rate",
-            title=f"Charge Rate by Race ({lvl}; {years[0]}–{years[-1]})",
-            ylabel="Charge Rate",
-            caption=f"Charge outcomes restricted to {lvl} charges."
-        )
 
         _line_chart(
             dsub,
@@ -428,88 +348,3 @@ def visualize_prosecution(prosecution_analysis):
             ylabel="Enhancement Rate",
             caption=f"Enhancement outcomes restricted to {lvl} charges."
         )
-
-        # Latest-year ratios for this statute level
-        latest_year = years[-1]
-        latest_df = dsub[dsub["Year"] == latest_year].copy()
-
-        ratio_cols = [
-            "Charge Rate (White=1)",
-            "Enhancement Rate (White=1)",
-        ]
-        ratio_cols = [c for c in ratio_cols if c in latest_df.columns]
-
-        if not latest_df.empty and ratio_cols:
-            plot_df = latest_df.set_index(race_col)[ratio_cols].reindex(races)
-
-            plot_df.plot(kind="bar", figsize=(8, 4))
-            plt.axhline(1.0)
-            plt.title(f"Prosecution Disparity Ratios ({lvl}, {latest_year}; White = 1)")
-            plt.xlabel("Race")  # IMPORTANT: x-axis is Race
-            plt.ylabel("Ratio relative to White")
-            plt.xticks(rotation=30, ha="right")
-            plt.tight_layout()
-            plt.show()
-
-def plot_pipeline_disparity_summary(policing_analysis, prosecution_analysis):
-    """
-    Create a single summary visualization comparing White-normalized
-    disparity ratios across the criminal justice pipeline.
-
-    Uses latest available year.
-    """
-
-    # --- Get latest year ---
-    latest_year = policing_analysis["Year"].max()
-
-    # Filter to latest year
-    pol = policing_analysis[policing_analysis["Year"] == latest_year].copy()
-    pros = prosecution_analysis[prosecution_analysis["Year"] == latest_year].copy()
-
-    # For prosecution, collapse statute levels (average across levels)
-    pros_summary = (
-        pros.groupby("Canonical Race")[
-            ["Charge Rate (White=1)", "Enhancement Rate (White=1)"]
-        ]
-        .mean()
-        .reset_index()
-    )
-
-    # Merge policing + prosecution disparities
-    summary = pol.merge(
-        pros_summary,
-        left_on="Perceived Race",
-        right_on="Canonical Race",
-        how="left"
-    )
-
-    # Keep only necessary columns
-    summary = summary[[
-        "Perceived Race",
-        "Stops per 1,000 (White=1)",
-        "Search Rate (White=1)",
-        "Hit Rate (White=1)",
-        "Charge Rate (White=1)",
-        "Enhancement Rate (White=1)"
-    ]]
-
-    summary = summary.rename(columns={
-        "Perceived Race": "Race"
-    })
-
-    summary = summary.set_index("Race")
-
-    # Remove White (reference group)
-    summary = summary[summary.index != "White"]
-
-    # --- Plot ---
-    summary.plot(kind="bar", figsize=(12, 6))
-
-    plt.axhline(1.0, linestyle="--")
-    plt.ylabel("Disparity Ratio (White = 1)")
-    plt.xlabel("Race")
-    plt.title(f"Racial Disparities Across Criminal Justice Stages in Orange County ({latest_year})")
-
-    plt.xticks(rotation=30, ha="right")
-    plt.tight_layout()
-    plt.show()

@@ -350,3 +350,140 @@ def visualize_prosecution(prosecution_analysis):
             ylabel="Enhancement Rate",
             caption=f"Enhancement outcomes restricted to {lvl} charges."
         )
+
+
+def save_policing(policing_analysis):
+    """
+    Export core policing figures to ../output
+    """
+
+    import os
+    os.makedirs("../output", exist_ok=True)
+
+    df = policing_analysis.copy()
+    race_col = "Perceived Race"
+
+    df = visualization_setup(df, race_col=race_col)
+
+    if pd.api.types.is_categorical_dtype(df[race_col]):
+        races = list(df[race_col].cat.categories)
+    else:
+        races = sorted(df[race_col].dropna().unique().tolist())
+
+    years = sorted(df["Year"].dropna().unique().tolist())
+    if not years:
+        raise ValueError("No years found in policing_analysis['Year'].")
+
+    def _set_year_ticks():
+        plt.xticks(years)
+
+    def _line_chart(y_col, title, ylabel, filename):
+        if y_col not in df.columns:
+            return
+
+        plt.figure(figsize=(8, 5))
+
+        for race in races:
+            d = df[df[race_col] == race].sort_values("Year")
+            if len(d) > 0 and d[y_col].notna().any():
+                plt.plot(d["Year"], d[y_col], marker="o", label=race)
+
+        plt.title(title)
+        plt.xlabel("Year")
+        plt.ylabel(ylabel)
+        plt.legend(title="Perceived Race")
+        _set_year_ticks()
+
+        plt.tight_layout()
+        plt.savefig(f"../output/{filename}.png", dpi=300, bbox_inches="tight")
+        plt.close()
+
+    _line_chart(
+        "Stops per 1,000",
+        f"Stops per 1,000 Residents by Perceived Race ({years[0]}–{years[-1]})",
+        "Stops per 1,000",
+        "policing_stops_per_1000"
+    )
+
+    _line_chart(
+        "Searches per 1,000",
+        f"Searches per 1,000 Residents by Perceived Race ({years[0]}–{years[-1]})",
+        "Searches per 1,000",
+        "policing_searches_per_1000"
+    )
+
+    _line_chart(
+        "Search Rate",
+        f"Search Rate by Perceived Race ({years[0]}–{years[-1]})",
+        "Search Rate",
+        "policing_search_rate"
+    )
+
+    _line_chart(
+        "Hit Rate",
+        f"Hit Rate by Perceived Race ({years[0]}–{years[-1]})",
+        "Hit Rate",
+        "policing_hit_rate"
+    )
+
+
+def save_prosecution(prosecution_analysis):
+    """
+    Export prosecution figures to ../output
+    """
+
+    import os
+    os.makedirs("../output", exist_ok=True)
+
+    df = prosecution_analysis.copy()
+    race_col = "Canonical Race"
+
+    df = visualization_setup(df, race_col=race_col)
+
+    if pd.api.types.is_categorical_dtype(df[race_col]):
+        races = list(df[race_col].cat.categories)
+    else:
+        races = sorted(df[race_col].dropna().unique().tolist())
+
+    years = sorted(df["Year"].dropna().unique().tolist())
+    if not years:
+        raise ValueError("No years found in prosecution_analysis['Year'].")
+
+    statute_levels = sorted(df["statute_level"].dropna().unique().tolist())
+
+    def _set_year_ticks():
+        plt.xticks(years)
+
+    def _line_chart(dsub, y_col, title, ylabel, filename):
+        if y_col not in dsub.columns:
+            return
+
+        plt.figure(figsize=(8, 5))
+
+        for race in races:
+            d = dsub[dsub[race_col] == race].sort_values("Year")
+            if len(d) > 0 and d[y_col].notna().any():
+                plt.plot(d["Year"], d[y_col], marker="o", label=race)
+
+        plt.title(title)
+        plt.xlabel("Year")
+        plt.ylabel(ylabel)
+        plt.legend(title="Race")
+        _set_year_ticks()
+
+        plt.tight_layout()
+        plt.savefig(f"../output/{filename}.png", dpi=300, bbox_inches="tight")
+        plt.close()
+
+    for lvl in ["Felony", "Misdemeanor"]:
+        dsub = df[df["statute_level"] == lvl].copy()
+        if dsub.empty:
+            continue
+
+        _line_chart(
+            dsub,
+            "Enhancement Rate",
+            f"Enhancement Rate by Race ({lvl}; {years[0]}–{years[-1]})",
+            "Enhancement Rate",
+            f"prosecution_enhancement_rate_{lvl.lower()}"
+        )

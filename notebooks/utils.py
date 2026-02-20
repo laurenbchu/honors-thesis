@@ -176,12 +176,14 @@ def prosecution_rates_by_statute_level(prosecution):
     if "Canonical Race" not in df.columns and "race_std" in df.columns:
         df = df.rename(columns={"race_std": "Canonical Race"})
 
+    # Remove Infractions
+    df = df[df["statute_level"] != "Infraction"]
+
     summary = (
         df.groupby(["Canonical Race", "Year", "statute_level"])
           .agg(
               **{
                   "Total Charges": ("was_filed_by_da", "size"),
-                  "Charge Rate": ("was_filed_by_da", "mean"),
                   "Enhancement Rate": ("is_enhancement_charge", "mean"),
               }
           )

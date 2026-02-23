@@ -115,7 +115,7 @@ def census_rollup(census_relabeled):
     })
 
 
-def policing_summary_table(df, census):
+def full_policing_analysis(df, census):
     """
     Build a race × year policing summary table that includes:
     - Stop Count
@@ -161,7 +161,7 @@ def policing_summary_table(df, census):
     return summary
 
 
-def discretionary_policing_summary_table(df, census):
+def discretionary_policing_analysis(df, census):
     """
     Build a race × year policing summary table for discretionary stops,
     measuring discretionary search behavior.
@@ -176,22 +176,7 @@ def discretionary_policing_summary_table(df, census):
     - Discretionary Searches per 1,000
     """
 
-    # 1. Restrict to discretionary stop reasons
-    disc_stops = df[df["reason_for_contact"].isin([
-        "Moving violation",
-        "Equipment violation",
-        "Non-moving violation",
-        "Suspect criminal activity"
-    ])].copy()
-
-    # 2. Create discretionary search indicator
-    disc_stops["disc_search"] = disc_stops["search_type"] == "Discretionary only"
-
-    # 3. Hits among discretionary searches
-    disc_stops["disc_hit"] = disc_stops["disc_search"] & (disc_stops["contraband_any"])
-
-    # 4. Group by year and race
-    g = disc_stops.groupby(["year", "race_std"])
+    g = df.groupby(["year", "race_std"])
 
     summary = g.agg(
         Stop_Count=("disc_search", "size"),

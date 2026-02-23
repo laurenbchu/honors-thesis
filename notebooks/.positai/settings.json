@@ -1,0 +1,7 @@
+{
+  "permission": {
+    "edit": {
+      "c:\\Thesis\\honors-thesis\\notebooks/*": "allow"
+    }
+  }
+}

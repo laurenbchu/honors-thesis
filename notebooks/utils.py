@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -156,6 +157,80 @@ def policing_summary_table(df, census):
     per = 1000
     summary["Stops per 1,000"] = (summary["Stop Count"] / summary["Population"]) * per
     summary["Searches per 1,000"] = (summary["Search Count"] / summary["Population"]) * per
+
+    return summary
+
+
+def discretionary_policing_summary_table(df, census):
+    """
+    Build a race × year policing summary table for discretionary stops,
+    measuring discretionary search behavior.
+
+    Includes:
+    - Stop Count (discretionary stop reasons only)
+    - Discretionary Search Count
+    - Discretionary Hit Count
+    - Discretionary Search Rate
+    - Discretionary Hit Rate
+    - Stops per 1,000
+    - Discretionary Searches per 1,000
+    """
+
+    # 1. Restrict to discretionary stop reasons
+    disc_stops = df[df["reason_for_contact"].isin([
+        "Moving violation",
+        "Equipment violation",
+        "Non-moving violation",
+        "Suspect criminal activity"
+    ])].copy()
+
+    # 2. Create discretionary search indicator
+    disc_stops["disc_search"] = disc_stops["search_type"] == "Discretionary only"
+
+    # 3. Hits among discretionary searches
+    disc_stops["disc_hit"] = disc_stops["disc_search"] & (disc_stops["contraband_any"])
+
+    # 4. Group by year and race
+    g = disc_stops.groupby(["year", "race_std"])
+
+    summary = g.agg(
+        Stop_Count=("disc_search", "size"),
+        Discretionary_Search_Count=("disc_search", "sum"),
+        Discretionary_Hit_Count=("disc_hit", "sum"),
+    ).reset_index()
+
+    # Rename columns
+    summary = summary.rename(columns={
+        "year": "Year",
+        "race_std": "Perceived Race",
+        "Stop_Count": "Stop Count",
+        "Discretionary_Search_Count": "Discretionary Search Count",
+        "Discretionary_Hit_Count": "Discretionary Hit Count",
+    })
+
+    # 5. Rates
+    summary["Discretionary Search Rate"] = (
+        summary["Discretionary Search Count"] / summary["Stop Count"]
+    )
+
+    summary["Discretionary Hit Rate"] = np.where(
+        summary["Discretionary Search Count"] > 0,
+        summary["Discretionary Hit Count"] / summary["Discretionary Search Count"],
+        np.nan
+    )
+
+    # 6. Add population
+    summary["Population"] = summary["Perceived Race"].map(census)
+
+    # Per-capita rates (per 1,000 residents)
+    per = 1000
+    summary["Stops per 1,000"] = (
+        summary["Stop Count"] / summary["Population"]
+    ) * per
+
+    summary["Discretionary Searches per 1,000"] = (
+        summary["Discretionary Search Count"] / summary["Population"]
+    ) * per
 
     return summary
 
@@ -487,3 +562,4 @@ def save_prosecution(prosecution_analysis):
             "Enhancement Rate",
             f"prosecution_enhancement_rate_{lvl.lower()}"
         )
+

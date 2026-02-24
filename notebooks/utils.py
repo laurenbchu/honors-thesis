@@ -115,26 +115,18 @@ def census_rollup(census_relabeled):
     })
 
 
-def full_policing_analysis(df, census):
+def policing_rates(df, census):
     """
-    Build a race × year policing summary table that includes:
-    - Stop Count
-    - Search Count
-    - Hit Count
-    - Search Rate
-    - Hit Rate
-    - Stops per 1,000
-    - Searches per 1,000
-    - Hits per 1,000
+    Build a race × year policing summary table for discretionary stops only,
+    measuring discretionary search behavior.
     """
 
-    # Group by year and race
     g = df.groupby(["year", "race_std"])
 
     summary = g.agg(
-        Stop_Count=("action_any_search", "size"),
-        Search_Count=("action_any_search", "sum"),
-        Hit_Count=("contraband_any", "sum"),
+        Stop_Count=("disc_search", "size"),
+        Search_Count=("disc_search", "sum"),
+        Hit_Count=("disc_hit", "sum"),
     ).reset_index()
 
     # Rename columns
@@ -146,61 +138,14 @@ def full_policing_analysis(df, census):
         "Hit_Count": "Hit Count",
     })
 
-    # Conditional rates
-    summary["Search Rate"] = summary["Search Count"] / summary["Stop Count"]
-    summary["Hit Rate"] = summary["Hit Count"] / summary["Search Count"]
-
-    # Add population
-    summary["Population"] = summary["Perceived Race"].map(census)
-
-    # Per-capita rates (per 1,000 residents)
-    per = 1000
-    summary["Stops per 1,000"] = (summary["Stop Count"] / summary["Population"]) * per
-    summary["Searches per 1,000"] = (summary["Search Count"] / summary["Population"]) * per
-
-    return summary
-
-
-def discretionary_policing_analysis(df, census):
-    """
-    Build a race × year policing summary table for discretionary stops,
-    measuring discretionary search behavior.
-
-    Includes:
-    - Stop Count (discretionary stop reasons only)
-    - Discretionary Search Count
-    - Discretionary Hit Count
-    - Discretionary Search Rate
-    - Discretionary Hit Rate
-    - Stops per 1,000
-    - Discretionary Searches per 1,000
-    """
-
-    g = df.groupby(["year", "race_std"])
-
-    summary = g.agg(
-        Stop_Count=("disc_search", "size"),
-        Discretionary_Search_Count=("disc_search", "sum"),
-        Discretionary_Hit_Count=("disc_hit", "sum"),
-    ).reset_index()
-
-    # Rename columns
-    summary = summary.rename(columns={
-        "year": "Year",
-        "race_std": "Perceived Race",
-        "Stop_Count": "Stop Count",
-        "Discretionary_Search_Count": "Discretionary Search Count",
-        "Discretionary_Hit_Count": "Discretionary Hit Count",
-    })
-
     # 5. Rates
-    summary["Discretionary Search Rate"] = (
-        summary["Discretionary Search Count"] / summary["Stop Count"]
+    summary["Search Rate"] = (
+        summary["Search Count"] / summary["Stop Count"]
     )
 
-    summary["Discretionary Hit Rate"] = np.where(
-        summary["Discretionary Search Count"] > 0,
-        summary["Discretionary Hit Count"] / summary["Discretionary Search Count"],
+    summary["Hit Rate"] = np.where(
+        summary["Search Count"] > 0,
+        summary["Hit Count"] / summary["Search Count"],
         np.nan
     )
 
@@ -213,8 +158,8 @@ def discretionary_policing_analysis(df, census):
         summary["Stop Count"] / summary["Population"]
     ) * per
 
-    summary["Discretionary Searches per 1,000"] = (
-        summary["Discretionary Search Count"] / summary["Population"]
+    summary["Searches per 1,000"] = (
+        summary["Search Count"] / summary["Population"]
     ) * per
 
     return summary

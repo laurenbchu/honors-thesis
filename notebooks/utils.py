@@ -219,277 +219,311 @@ def visualization_setup(df, race_col):
 
 
 def visualize_policing(policing_analysis):
-    """
-    Policing visuals (most relevant):
-      1) Stops per 1,000 by Perceived Race (exposure)
-      2) Searches per 1,000 by Perceived Race (exposure)
-      3) Search Rate by Perceived Race (decision)
-      4) Hit Rate by Perceived Race (outcome test)
-      5) Latest-year disparity ratios (White=1) for Stops/Searches/Search Rate/Hit Rate (summary)
-    """
     df = policing_analysis.copy()
     race_col = "Perceived Race"
-
+    
+    # Import the visualization_setup function
+    from utils import visualization_setup
     df = visualization_setup(df, race_col=race_col)
-
-    if pd.api.types.is_categorical_dtype(df[race_col]):
-        races = list(df[race_col].cat.categories)
-    else:
-        races = sorted(df[race_col].dropna().unique().tolist())
-
+    
+    # Define color palette (colorblind-friendly, Wong 2011)
+    color_map = {
+        "Black/African American": "#D55E00",  # vermillion
+        "Hispanic/Latino": "#0072B2",  # blue
+        "White": "#999999",  # gray (baseline)
+        "Asian": "#009E73",  # bluish green
+        "Other": "#CC79A7"  # reddish purple
+    }
+    
     years = sorted(df["Year"].dropna().unique().tolist())
-    if not years:
-        raise ValueError("No years found in policing_analysis['Year'].")
-
-    def _set_year_ticks():
-        plt.xticks(years)
-
-    def _line_chart(y_col, title, ylabel, caption):
-        if y_col not in df.columns:
-            return
-
-        plt.figure(figsize=(8, 5))
-        for race in races:
+    
+    def _create_figure(y_col, title, ylabel, caption):
+        """Create a single publication-quality line plot with caption"""
+        fig, ax = plt.subplots(figsize=(10, 7))
+        
+        for race in color_map.keys():
             d = df[df[race_col] == race].sort_values("Year")
             if len(d) > 0 and d[y_col].notna().any():
-                plt.plot(d["Year"], d[y_col], marker="o", label=race)
-
-        plt.title(title)
-        plt.xlabel("Year")
-        plt.ylabel(ylabel)
-        plt.legend(title="Perceived Race")
-        _set_year_ticks()
-
-        plt.figtext(0.5, -0.05, caption, ha="center", fontsize=10, wrap=True)
-        plt.tight_layout()
-        plt.show()
-
-    # --- Core policing figures ---
-    _line_chart(
+                linewidth = 2.5 if race == "White" else 2
+                linestyle = '--' if race == "White" else '-'
+                ax.plot(d["Year"], d[y_col], 
+                       marker="o", markersize=8,
+                       linewidth=linewidth, linestyle=linestyle,
+                       color=color_map[race], label=race)
+        
+        ax.set_xlabel("Year", fontsize=12, fontweight='bold')
+        ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+        ax.legend(title="Perceived Race", fontsize=10, title_fontsize=11, 
+                 frameon=True, fancybox=True, shadow=True, loc='best')
+        ax.set_xticks(years)
+        ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.5)
+        
+        # Format y-axis
+        if "Rate" in y_col:
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+        else:
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1f}'))
+        
+        # Add caption below the plot
+        fig.text(0.5, 0.01, caption, ha='center', fontsize=9, 
+                style='italic', wrap=True, color='#444444')
+        
+        plt.tight_layout(rect=[0, 0.06, 1, 1])
+        return fig
+    
+    # Create all four key figures with descriptive captions
+    figs = {}
+    
+    figs['stops'] = _create_figure(
         "Stops per 1,000",
-        title=f"Stops per 1,000 Residents by Perceived Race ({years[0]}–{years[-1]})",
-        ylabel="Stops per 1,000 (2020 Census baseline)",
-        caption="Population-normalized exposure to police stops over time."
+        "Police Stop Rates by Perceived Race\n(per 1,000 residents)",
+        "Stops per 1,000 Residents",
+        caption=("Population-normalized exposure to discretionary police stops. "
+                "Rates based on 2020 Census population data. "
+                "White baseline shown as dashed line. ")
     )
-
-    _line_chart(
+    
+    figs['searches'] = _create_figure(
         "Searches per 1,000",
-        title=f"Searches per 1,000 Residents by Perceived Race ({years[0]}–{years[-1]})",
-        ylabel="Searches per 1,000 (2020 Census baseline)",
-        caption="Population-normalized exposure to police searches over time."
+        "Police Search Rates by Perceived Race\n(per 1,000 residents, 2020 Census)", 
+        "Searches per 1,000 Residents",
+        caption=("Population-normalized exposure to purely discretionary police searches. "
+                "White baseline shown as dashed line.")
     )
-
-    _line_chart(
+    
+    figs['search_rate'] = _create_figure(
         "Search Rate",
-        title=f"Search Rate by Perceived Race ({years[0]}–{years[-1]})",
-        ylabel="Search Rate",
-        caption="Conditional on being stopped: how often stops turn into searches."
+        "Conditional Search Rate by Perceived Race\n(among those stopped)",
+        "Search Rate",
+        caption=("Conditional probability of being searched for a purely discretionary reason, given a discretionary stop. "
+                " White baseline shown as dashed line.")
     )
-
-    _line_chart(
+    
+    figs['hit_rate'] = _create_figure(
         "Hit Rate",
-        title=f"Hit Rate by Perceived Race ({years[0]}–{years[-1]})",
-        ylabel="Hit Rate",
-        caption="Outcome test (conditional on search): how often searches yield contraband."
+        "Contraband Hit Rate by Perceived Race\n(outcome test: contraband found given search)",
+        "Hit Rate",
+        caption=("Outcome test: percentage of purely discretionary searches that yield contraband. "
+                "White baseline shown as dashed line.")
     )
+    
+    return figs
 
 
 def visualize_prosecution(prosecution_analysis):
-    """
-    Prosecution visuals (most relevant):
-      For EACH statute_level (Felony/Misdemeanor/Infraction):
-        1) Charge Rate by Canonical Race over time
-        2) Enhancement Rate by Canonical Race over time
-        3) Latest-year disparity ratios (White=1) for Charge/Enhancement (summary)
-    """
     df = prosecution_analysis.copy()
     race_col = "Canonical Race"
-
+    
+    # Import the visualization_setup function
+    from utils import visualization_setup
     df = visualization_setup(df, race_col=race_col)
-
-    if pd.api.types.is_categorical_dtype(df[race_col]):
-        races = list(df[race_col].cat.categories)
-    else:
-        races = sorted(df[race_col].dropna().unique().tolist())
-
+    
+    # Define color palette (colorblind-friendly, Wong 2011)
+    color_map = {
+        "Black/African American": "#D55E00",  # vermillion
+        "Hispanic/Latino": "#0072B2",  # blue
+        "White": "#999999",  # gray (baseline)
+        "Asian": "#009E73",  # bluish green
+        "Other": "#CC79A7"  # reddish purple
+    }
+    
     years = sorted(df["Year"].dropna().unique().tolist())
-    if not years:
-        raise ValueError("No years found in prosecution_analysis['Year'].")
-
-    statute_levels = sorted(df["statute_level"].dropna().unique().tolist())
-    if not statute_levels:
-        raise ValueError("No statute_level values found in prosecution_analysis['statute_level'].")
-
-    def _set_year_ticks():
-        plt.xticks(years)
-
-    def _line_chart(dsub, y_col, title, ylabel, caption):
-        if y_col not in dsub.columns:
-            return
-
-        plt.figure(figsize=(8, 5))
-        for race in races:
+    
+    def _create_figure(dsub, y_col, title, ylabel, caption):
+        """Create a single publication-quality line plot with caption"""
+        fig, ax = plt.subplots(figsize=(10, 7))
+        
+        for race in color_map.keys():
             d = dsub[dsub[race_col] == race].sort_values("Year")
             if len(d) > 0 and d[y_col].notna().any():
-                plt.plot(d["Year"], d[y_col], marker="o", label=race)
-
-        plt.title(title)
-        plt.xlabel("Year")
-        plt.ylabel(ylabel)
-        plt.legend(title="Race")  # IMPORTANT: not "Perceived Race"
-        _set_year_ticks()
-
-        plt.figtext(0.5, -0.05, caption, ha="center", fontsize=10, wrap=True)
-        plt.tight_layout()
-        plt.show()
-
+                linewidth = 2.5 if race == "White" else 2
+                linestyle = '--' if race == "White" else '-'
+                ax.plot(d["Year"], d[y_col], 
+                       marker="o", markersize=8,
+                       linewidth=linewidth, linestyle=linestyle,
+                       color=color_map[race], label=race)
+        
+        ax.set_xlabel("Year", fontsize=12, fontweight='bold')
+        ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+        ax.legend(title="Race", fontsize=10, title_fontsize=11, 
+                 frameon=True, fancybox=True, shadow=True, loc='best')
+        ax.set_xticks(years)
+        ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.5)
+        
+        # Format y-axis as percentage
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+        
+        # Add caption below the plot
+        fig.text(0.5, 0.01, caption, ha='center', fontsize=9, 
+                style='italic', wrap=True, color='#444444')
+        
+        plt.tight_layout(rect=[0, 0.06, 1, 1])
+        return fig
+    
+    # Create figures for each statute level with descriptive captions
+    figs = {}
+    
     for lvl in ["Felony", "Misdemeanor"]:
         dsub = df[df["statute_level"] == lvl].copy()
         if dsub.empty:
             continue
-
-        _line_chart(
+        
+        if lvl == "Felony":
+            caption = ("Enhancement rate for felony charges by defendant race. Enhancement charges add additional "
+                      "time to a person's sentence. "
+                      "White baseline shown as dashed line. Colors follow Wong (2011) palette.")
+        else:  # Misdemeanor
+            caption = ("Enhancement rate for misdemeanor charges by defendant race. Enhancement charges add additional "
+                      "time to a person's sentence. "
+                      "White baseline shown as dashed line.")
+        
+        figs[f'enhancement_{lvl.lower()}'] = _create_figure(
             dsub,
             "Enhancement Rate",
-            title=f"Enhancement Rate by Race ({lvl}; {years[0]}–{years[-1]})",
-            ylabel="Enhancement Rate",
-            caption=f"Enhancement outcomes restricted to {lvl} charges."
+            f"Charge Enhancement Rate by Race\n({lvl} charges)",
+            "Enhancement Rate",
+            caption=caption
         )
+    
+    return figs
 
-
-def save_policing(policing_analysis):
-    """
-    Export core policing figures to ../output
-    """
-
-    import os
-    os.makedirs("../output", exist_ok=True)
-
+def format_policing_table_for_thesis(policing_analysis):
     df = policing_analysis.copy()
-    race_col = "Perceived Race"
-
-    df = visualization_setup(df, race_col=race_col)
-
-    if pd.api.types.is_categorical_dtype(df[race_col]):
-        races = list(df[race_col].cat.categories)
-    else:
-        races = sorted(df[race_col].dropna().unique().tolist())
-
-    years = sorted(df["Year"].dropna().unique().tolist())
-    if not years:
-        raise ValueError("No years found in policing_analysis['Year'].")
-
-    def _set_year_ticks():
-        plt.xticks(years)
-
-    def _line_chart(y_col, title, ylabel, filename):
-        if y_col not in df.columns:
-            return
-
-        plt.figure(figsize=(8, 5))
-
-        for race in races:
-            d = df[df[race_col] == race].sort_values("Year")
-            if len(d) > 0 and d[y_col].notna().any():
-                plt.plot(d["Year"], d[y_col], marker="o", label=race)
-
-        plt.title(title)
-        plt.xlabel("Year")
-        plt.ylabel(ylabel)
-        plt.legend(title="Perceived Race")
-        _set_year_ticks()
-
-        plt.tight_layout()
-        plt.savefig(f"../output/{filename}.png", dpi=300, bbox_inches="tight")
-        plt.close()
-
-    _line_chart(
-        "Stops per 1,000",
-        f"Stops per 1,000 Residents by Perceived Race ({years[0]}–{years[-1]})",
-        "Stops per 1,000",
-        "policing_stops_per_1000"
-    )
-
-    _line_chart(
-        "Searches per 1,000",
-        f"Searches per 1,000 Residents by Perceived Race ({years[0]}–{years[-1]})",
-        "Searches per 1,000",
-        "policing_searches_per_1000"
-    )
-
-    _line_chart(
-        "Search Rate",
-        f"Search Rate by Perceived Race ({years[0]}–{years[-1]})",
-        "Search Rate",
-        "policing_search_rate"
-    )
-
-    _line_chart(
-        "Hit Rate",
-        f"Hit Rate by Perceived Race ({years[0]}–{years[-1]})",
-        "Hit Rate",
-        "policing_hit_rate"
-    )
+    
+    # Reorder columns for logical flow
+    df = df[[
+        'Year', 
+        'Perceived Race', 
+        'Population',
+        'Stop Count', 
+        'Stops per 1,000',
+        'Search Count',
+        'Searches per 1,000',
+        'Search Rate',
+        'Hit Count',
+        'Hit Rate'
+    ]]
+    
+    # Rename columns for thesis
+    df = df.rename(columns={
+        'Perceived Race': 'Race/Ethnicity',
+        'Stop Count': 'Total Stops',
+        'Search Count': 'Total Searches',
+        'Hit Count': 'Contraband Found',
+        'Stops per 1,000': 'Stop Rate\n(per 1,000)',
+        'Searches per 1,000': 'Search Rate\n(per 1,000)',
+        'Search Rate': 'Conditional\nSearch Rate',
+        'Hit Rate': 'Hit Rate'
+    })
+    
+    # Format numbers appropriately
+    df['Population'] = df['Population'].apply(lambda x: f'{int(x):,}')
+    df['Total Stops'] = df['Total Stops'].apply(lambda x: f'{int(x):,}')
+    df['Total Searches'] = df['Total Searches'].apply(lambda x: f'{int(x):,}')
+    df['Contraband Found'] = df['Contraband Found'].apply(lambda x: f'{int(x):,}')
+    
+    # Format rates as percentages or rounded decimals
+    df['Stop Rate\n(per 1,000)'] = df['Stop Rate\n(per 1,000)'].apply(lambda x: f'{x:.1f}')
+    df['Search Rate\n(per 1,000)'] = df['Search Rate\n(per 1,000)'].apply(lambda x: f'{x:.1f}')
+    df['Conditional\nSearch Rate'] = df['Conditional\nSearch Rate'].apply(lambda x: f'{x:.1%}')
+    df['Hit Rate'] = df['Hit Rate'].apply(lambda x: f'{x:.1%}' if pd.notna(x) else '—')
+    
+    return df
 
 
-def save_prosecution(prosecution_analysis):
-    """
-    Export prosecution figures to ../output
-    """
-
-    import os
-    os.makedirs("../output", exist_ok=True)
-
+def format_prosecution_table_for_thesis(prosecution_analysis):
     df = prosecution_analysis.copy()
-    race_col = "Canonical Race"
+    
+    # Rename columns for thesis
+    df = df.rename(columns={
+        'Canonical Race': 'Race/Ethnicity',
+        'Year': 'Year',
+        'statute_level': 'Charge Level',
+        'Total Charges': 'Total Charges',
+        'Enhancement Rate': 'Enhancement Rate'
+    })
+    
+    # Reorder columns
+    df = df[['Year', 'Charge Level', 'Race/Ethnicity', 'Total Charges', 'Enhancement Rate']]
+    
+    # Format numbers
+    df['Total Charges'] = df['Total Charges'].apply(lambda x: f'{int(x):,}')
+    df['Enhancement Rate'] = df['Enhancement Rate'].apply(lambda x: f'{x:.1%}')
+    
+    return df
 
-    df = visualization_setup(df, race_col=race_col)
 
-    if pd.api.types.is_categorical_dtype(df[race_col]):
-        races = list(df[race_col].cat.categories)
-    else:
-        races = sorted(df[race_col].dropna().unique().tolist())
+def create_disparity_ratio_table(policing_analysis, baseline_race='White'):
+    """
+    Create a table showing disparity ratios relative to White baseline
+    This is very useful for thesis to highlight key findings
+    """
+    df = policing_analysis.copy()
+    
+    # Get the most recent year
+    latest_year = df['Year'].max()
+    df_latest = df[df['Year'] == latest_year].copy()
+    
+    # Get baseline values
+    baseline = df_latest[df_latest['Perceived Race'] == baseline_race].iloc[0]
+    
+    # Calculate ratios for each race
+    ratios = []
+    for _, row in df_latest.iterrows():
+        race = row['Perceived Race']
+        ratios.append({
+            'Race/Ethnicity': race,
+            'Stop Rate Ratio': row['Stops per 1,000'] / baseline['Stops per 1,000'],
+            'Search Rate Ratio': row['Searches per 1,000'] / baseline['Searches per 1,000'],
+            'Conditional Search Ratio': row['Search Rate'] / baseline['Search Rate'],
+            'Hit Rate Ratio': row['Hit Rate'] / baseline['Hit Rate'] if pd.notna(row['Hit Rate']) else None
+        })
+    
+    ratio_df = pd.DataFrame(ratios)
+    
+    # Format ratios
+    for col in ['Stop Rate Ratio', 'Search Rate Ratio', 'Conditional Search Ratio', 'Hit Rate Ratio']:
+        ratio_df[col] = ratio_df[col].apply(lambda x: f'{x:.2f}×' if pd.notna(x) else '—')
+    
+    return ratio_df
 
-    years = sorted(df["Year"].dropna().unique().tolist())
-    if not years:
-        raise ValueError("No years found in prosecution_analysis['Year'].")
 
-    statute_levels = sorted(df["statute_level"].dropna().unique().tolist())
-
-    def _set_year_ticks():
-        plt.xticks(years)
-
-    def _line_chart(dsub, y_col, title, ylabel, filename):
-        if y_col not in dsub.columns:
-            return
-
-        plt.figure(figsize=(8, 5))
-
-        for race in races:
-            d = dsub[dsub[race_col] == race].sort_values("Year")
-            if len(d) > 0 and d[y_col].notna().any():
-                plt.plot(d["Year"], d[y_col], marker="o", label=race)
-
-        plt.title(title)
-        plt.xlabel("Year")
-        plt.ylabel(ylabel)
-        plt.legend(title="Race")
-        _set_year_ticks()
-
-        plt.tight_layout()
-        plt.savefig(f"../output/{filename}.png", dpi=300, bbox_inches="tight")
-        plt.close()
-
-    for lvl in ["Felony", "Misdemeanor"]:
-        dsub = df[df["statute_level"] == lvl].copy()
-        if dsub.empty:
-            continue
-
-        _line_chart(
-            dsub,
-            "Enhancement Rate",
-            f"Enhancement Rate by Race ({lvl}; {years[0]}–{years[-1]})",
-            "Enhancement Rate",
-            f"prosecution_enhancement_rate_{lvl.lower()}"
-        )
-
+def save_tables_for_thesis(policing_analysis, prosecution_analysis, output_dir='../output'):
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Format tables
+    policing_formatted = format_policing_table_for_thesis(policing_analysis)
+    prosecution_formatted = format_prosecution_table_for_thesis(prosecution_analysis)
+    disparity_ratios = create_disparity_ratio_table(policing_analysis)
+    
+    # Save as CSV (for reference)
+    policing_formatted.to_csv(f'{output_dir}/policing_table_formatted.csv', index=False)
+    prosecution_formatted.to_csv(f'{output_dir}/prosecution_table_formatted.csv', index=False)
+    disparity_ratios.to_csv(f'{output_dir}/disparity_ratios.csv', index=False)
+    
+    # Save as LaTeX (for direct thesis inclusion)
+    with open(f'{output_dir}/policing_table.tex', 'w') as f:
+        f.write(policing_formatted.to_latex(index=False, escape=False, 
+                                            caption='Police Stop and Search Rates by Race/Ethnicity (2022-2024)',
+                                            label='tab:policing'))
+    
+    with open(f'{output_dir}/prosecution_table.tex', 'w') as f:
+        f.write(prosecution_formatted.to_latex(index=False, escape=False,
+                                               caption='Charge Enhancement Rates by Race/Ethnicity (2021-2023)',
+                                               label='tab:prosecution'))
+    
+    with open(f'{output_dir}/disparity_ratios.tex', 'w') as f:
+        f.write(disparity_ratios.to_latex(index=False, escape=False,
+                                          caption='Disparity Ratios Relative to White Baseline (2024)',
+                                          label='tab:disparities'))
+    
+    # Save as Excel (for easy viewing/editing)
+    with pd.ExcelWriter(f'{output_dir}/thesis_tables.xlsx') as writer:
+        policing_formatted.to_excel(writer, sheet_name='Policing', index=False)
+        prosecution_formatted.to_excel(writer, sheet_name='Prosecution', index=False)
+        disparity_ratios.to_excel(writer, sheet_name='Disparity Ratios', index=False)
+    
+    return policing_formatted, prosecution_formatted, disparity_ratios

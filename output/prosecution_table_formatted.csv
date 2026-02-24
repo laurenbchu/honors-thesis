@@ -1,0 +1,31 @@
+Year,Charge Level,Race/Ethnicity,Total Charges,Enhancement Rate
+2021,Felony,Asian,"1,251",0.1%
+2021,Misdemeanor,Asian,"2,768",14.3%
+2022,Felony,Asian,"1,090",0.4%
+2022,Misdemeanor,Asian,"2,289",17.5%
+2023,Felony,Asian,876,0.1%
+2023,Misdemeanor,Asian,"1,325",16.4%
+2021,Felony,Black/African American,"1,689",0.8%
+2021,Misdemeanor,Black/African American,"3,014",11.2%
+2022,Felony,Black/African American,"2,195",0.7%
+2022,Misdemeanor,Black/African American,"2,881",11.2%
+2023,Felony,Black/African American,"1,121",0.2%
+2023,Misdemeanor,Black/African American,"1,467",9.9%
+2021,Felony,Hispanic/Latino,"12,669",2.1%
+2021,Misdemeanor,Hispanic/Latino,"30,450",12.1%
+2022,Felony,Hispanic/Latino,"15,274",1.5%
+2022,Misdemeanor,Hispanic/Latino,"27,555",13.4%
+2023,Felony,Hispanic/Latino,"7,188",1.2%
+2023,Misdemeanor,Hispanic/Latino,"14,375",12.8%
+2021,Felony,Other,"1,173",0.3%
+2021,Misdemeanor,Other,"2,506",14.7%
+2022,Felony,Other,"1,066",0.2%
+2022,Misdemeanor,Other,"2,227",16.6%
+2023,Felony,Other,608,0.7%
+2023,Misdemeanor,Other,"1,101",13.6%
+2021,Felony,White,"8,666",0.6%
+2021,Misdemeanor,White,"24,850",9.1%
+2022,Felony,White,"7,305",0.5%
+2022,Misdemeanor,White,"20,608",11.5%
+2023,Felony,White,"3,908",0.4%
+2023,Misdemeanor,White,"10,600",10.1%

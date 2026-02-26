@@ -309,3 +309,30 @@ def compare_search_classifications(policing_strict, policing_mixed):
     ]]
 
     return comparison, summary_2022, summary_2023, summary_2024, disparity_comparison
+
+
+def calculate_enhancement_rates_by_category(df):
+    """Calculate enhancement rates by race for each charge category"""
+    
+    # Group by race and charge category
+    grouped = df.groupby(['race_std', 'charge_category']).agg({
+        'is_enhancement_charge': ['sum', 'count', 'mean']
+    }).reset_index()
+    
+    # Flatten column names
+    grouped.columns = ['Race', 'Charge Category', 'Enhancement Count', 'Total Count', 'Enhancement Rate']
+    
+    # Calculate standard error: SE = sqrt(p * (1-p) / n)
+    grouped['Standard Error'] = np.sqrt(
+        (grouped['Enhancement Rate'] * (1 - grouped['Enhancement Rate'])) / grouped['Total Count']
+    )
+    
+    # Calculate 95% confidence interval (±1.96 * SE)
+    grouped['CI Lower'] = grouped['Enhancement Rate'] - 1.96 * grouped['Standard Error']
+    grouped['CI Upper'] = grouped['Enhancement Rate'] + 1.96 * grouped['Standard Error']
+    
+    # Ensure CI bounds are valid
+    grouped['CI Lower'] = grouped['CI Lower'].clip(lower=0)
+    grouped['CI Upper'] = grouped['CI Upper'].clip(upper=1)
+    
+    return grouped

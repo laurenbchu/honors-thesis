@@ -168,6 +168,85 @@ def visualize_prosecution(prosecution_analysis):
     
     return figs
 
+def create_sensitivity_visualization(comparison_df):
+
+    # Filter to most recent year automatically
+    latest_year = comparison_df['Year'].max()
+    df = comparison_df[comparison_df['Year'] == latest_year].copy()
+
+    race_order = [
+    "Black/African American",
+    "Hispanic/Latino",
+    "White",
+    "Asian",
+    "Other"
+    ]
+
+    df = df.set_index("Perceived Race").loc[race_order].reset_index()
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig.suptitle(
+        f'Sensitivity Analysis: Strict vs. Mixed Classification ({latest_year})',
+        fontsize=14,
+        fontweight='bold'
+    )
+
+    x = range(len(df))
+    width = 0.35
+
+    # ---- Search Rates ----
+    strict_search = df['Search Rate (Strict)'] * 100
+    mixed_search = df['Search Rate (Mixed)'] * 100
+
+    axes[0].bar(
+        [i - width/2 for i in x],
+        strict_search,
+        width,
+        label='Strict',
+        color='#0072B2'
+    )
+
+    axes[0].bar(
+        [i + width/2 for i in x],
+        mixed_search,
+        width,
+        label='Mixed',
+        color='#D55E00'
+    )
+
+    axes[0].set_title('Search Rate (%)')
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(df['Perceived Race'], rotation=45, ha='right')
+    axes[0].legend()
+
+    # ---- Hit Rates ----
+    strict_hit = df['Hit Rate (Strict)'] * 100
+    mixed_hit = df['Hit Rate (Mixed)'] * 100
+
+    axes[1].bar(
+        [i - width/2 for i in x],
+        strict_hit,
+        width,
+        label='Strict',
+        color='#0072B2'
+    )
+
+    axes[1].bar(
+        [i + width/2 for i in x],
+        mixed_hit,
+        width,
+        label='Mixed',
+        color='#D55E00'
+    )
+
+    axes[1].set_title('Hit Rate (%)')
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(df['Perceived Race'], rotation=45, ha='right')
+    axes[1].legend()
+
+    plt.tight_layout()
+    return fig
+
 
 def export_figures_to_pdf(figs_dict, output_dir='../output'):
     """

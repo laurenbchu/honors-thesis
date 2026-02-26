@@ -1,11 +1,13 @@
 {
   "permission": {
     "edit": {
-      "c:\\Thesis\\honors-thesis\\notebooks/*": "allow"
+      "c:\\Thesis\\honors-thesis\\notebooks/*": "allow",
+      "c:\\Thesis\\honors-thesis\\output/*": "allow"
     },
     "read": {
       "c:\\Thesis\\honors-thesis\\data\\documentation/*": "allow",
-      "c:\\Thesis\\honors-thesis/*": "allow"
+      "c:\\Thesis\\honors-thesis/*": "allow",
+      "c:\\Thesis\\honors-thesis\\output/*": "allow"
     }
   }
 }

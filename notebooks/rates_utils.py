@@ -200,10 +200,7 @@ def prosecution_rates_by_statute_level(prosecution):
 def policing_rates_mixed(df, census):
     """
     Build a race × year policing summary table for discretionary stops,
-    treating MIXED search bases as discretionary (sensitivity analysis).
-    
-    This alternative classification includes searches with both discretionary
-    and nondiscretionary bases in the discretionary search count.
+    treating mixed search bases as discretionary (sensitivity analysis).
     """
 
     g = df.groupby(["year", "race_std"])
@@ -251,79 +248,64 @@ def policing_rates_mixed(df, census):
 
 
 def compare_search_classifications(policing_strict, policing_mixed):
-    """
-    Create comparison tables showing differences between strict and mixed
-    search classification approaches.
-    
-    Parameters
-    ----------
-    policing_strict : DataFrame
-        Results using strict classification (discretionary only)
-    policing_mixed : DataFrame
-        Results using mixed classification (discretionary + mixed)
-    
-    Returns
-    -------
-    dict
-        Dictionary containing comparison DataFrames:
-        - 'by_year_race': Full comparison by year and race
-        - 'summary_2024': Summary for most recent year (2024)
-        - 'disparity_comparison': Disparity ratios under both approaches
-    """
-    
+
     # Merge the two approaches
     comparison = policing_strict.merge(
         policing_mixed,
         on=['Year', 'Perceived Race', 'Population'],
-        suffixes=('_strict', '_mixed')
+        suffixes=(' (Strict)', ' (Mixed)')
     )
-    
-    # Calculate differences
-    comparison['Search Count Diff'] = (
-        comparison['Search Count_mixed'] - comparison['Search Count_strict']
-    )
-    comparison['Search Count % Change'] = (
-        comparison['Search Count Diff'] / comparison['Search Count_strict'] * 100
-    )
-    
-    comparison['Search Rate Diff'] = (
-        comparison['Search Rate_mixed'] - comparison['Search Rate_strict']
-    )
-    comparison['Search Rate % Change'] = (
-        comparison['Search Rate Diff'] / comparison['Search Rate_strict'] * 100
-    )
-    
-    comparison['Hit Rate Diff'] = (
-        comparison['Hit Rate_mixed'] - comparison['Hit Rate_strict']
-    )
-    
-    # Create summary for most recent year
-    latest_year = comparison['Year'].max()
-    summary_2024 = comparison[comparison['Year'] == latest_year].copy()
-    
-    # Calculate disparity ratios for both approaches
+
+    summary_2022 = comparison[comparison['Year'] == 2022].copy()
+    summary_2023 = comparison[comparison['Year'] == 2023].copy()
+    summary_2024 = comparison[comparison['Year'] == 2024].copy()
+
+    # Calculate disparity ratios (baseline = White)
     def calc_disparities(df, suffix):
-        baseline = df[df['Perceived Race'] == 'White'].iloc[0]
+        baseline_rows = df[df['Perceived Race'] == 'White']
+        if len(baseline_rows) != 1:
+            raise ValueError(f"Expected exactly 1 White row for Year=2024, found {len(baseline_rows)}.")
+        baseline = baseline_rows.iloc[0]
+
         ratios = []
         for _, row in df.iterrows():
+            sr_base = baseline[f'Search Rate{suffix}']
+            hr_base = baseline[f'Hit Rate{suffix}']
+
+            sr = row[f'Search Rate{suffix}']
+            hr = row[f'Hit Rate{suffix}']
+
             ratios.append({
                 'Perceived Race': row['Perceived Race'],
-                f'Search Rate Ratio{suffix}': row[f'Search Rate{suffix}'] / baseline[f'Search Rate{suffix}'],
-                f'Hit Rate Ratio{suffix}': row[f'Hit Rate{suffix}'] / baseline[f'Hit Rate{suffix}']
-                    if pd.notna(row[f'Hit Rate{suffix}']) and pd.notna(baseline[f'Hit Rate{suffix}']) else np.nan
+                f'Search Rate Ratio{suffix}': (
+                    sr / sr_base if pd.notna(sr_base) and sr_base != 0 else np.nan
+                ),
+                f'Hit Rate Ratio{suffix}': (
+                    hr / hr_base if pd.notna(hr_base) and hr_base != 0 else np.nan
+                )
             })
+
         return pd.DataFrame(ratios)
-    
-    strict_ratios = calc_disparities(summary_2024, '_strict')
-    mixed_ratios = calc_disparities(summary_2024, '_mixed')
-    
+
+    strict_ratios = calc_disparities(summary_2024, ' (Strict)')
+    mixed_ratios  = calc_disparities(summary_2024, ' (Mixed)')
+
     disparity_comparison = strict_ratios.merge(
-        mixed_ratios[['Perceived Race', 'Search Rate Ratio_mixed', 'Hit Rate Ratio_mixed']],
-        on='Perceived Race'
+        mixed_ratios[['Perceived Race',
+                      'Search Rate Ratio (Mixed)',
+                      'Hit Rate Ratio (Mixed)']],
+        on='Perceived Race',
+        how='inner'
     )
-    
-    return {
-        'by_year_race': comparison,
-        'summary_2024': summary_2024,
-        'disparity_comparison': disparity_comparison
-    }
+
+    # Reorder columns for clarity
+    disparity_comparison = disparity_comparison[
+    [
+        'Perceived Race',
+        'Search Rate Ratio (Strict)',
+        'Search Rate Ratio (Mixed)',
+        'Hit Rate Ratio (Strict)',
+        'Hit Rate Ratio (Mixed)'
+    ]]
+
+    return comparison, summary_2022, summary_2023, summary_2024, disparity_comparison

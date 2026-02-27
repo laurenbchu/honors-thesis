@@ -41,19 +41,53 @@ def visualize_policing(policing_analysis):
     
     years = sorted(df["Year"].dropna().unique().tolist())
     
-    def _create_figure(y_col, title, ylabel):
-        """Create a single publication-quality line plot"""
+    def _create_figure(y_col, title, ylabel, show_errors=True, show_n=True):
+        """Create a single publication-quality line plot with error bars and sample sizes"""
         fig, ax = plt.subplots(figsize=(10, 7))
+
         
         for race in color_map.keys():
             d = df[df[race_col] == race].sort_values("Year")
             if len(d) > 0 and d[y_col].notna().any():
                 linewidth = 2.5 if race == "White" else 2
                 linestyle = '--' if race == "White" else '-'
-                ax.plot(d["Year"], d[y_col], 
+                
+                # Apply horizontal offset
+                x_vals = d["Year"]
+                
+                # Plot main line
+                ax.plot(x_vals, d[y_col], 
                        marker="o", markersize=8,
                        linewidth=linewidth, linestyle=linestyle,
                        color=color_map[race], label=race)
+                
+                # Add error bars if available and requested
+                if show_errors:
+                    se_col = f"{y_col} SE"
+                    if se_col in d.columns and d[se_col].notna().any():
+                        ax.errorbar(x_vals, d[y_col], yerr=d[se_col]*1.96,
+                                  fmt='none', ecolor=color_map[race], 
+                                  alpha=0.2, capsize=3, capthick=1.2)
+                
+                # Add sample size annotations if requested
+                if show_n:
+                    count_col = None
+                    if "Search Rate" in y_col or "Searches per" in y_col:
+                        count_col = "Search Count"
+                    elif "Hit Rate" in y_col:
+                        count_col = "Hit Count"
+                    elif "Stops per" in y_col:
+                        count_col = "Stop Count"
+                    
+                    if count_col and count_col in d.columns:
+                        for _, row in d.iterrows():
+                            n = int(row[count_col])
+                            x_pos = row["Year"]
+                            ax.annotate(f'n={n:,}', 
+                                      xy=(x_pos, row[y_col]),
+                                      xytext=(0, 10), textcoords='offset points',
+                                      fontsize=9, ha='center', alpha=0.8,
+                                      color=color_map[race])
         
         ax.set_xlabel("Year", fontsize=12, fontweight='bold')
         ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
@@ -70,7 +104,12 @@ def visualize_policing(policing_analysis):
         else:
             ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1f}'))
         
-        plt.tight_layout(rect=[0, 0, 0.85, 1])  # Leave room for legend on right
+        # Add note about error bars
+        if show_errors:
+            fig.text(0.5, 0.02, 'Error bars show 95% confidence intervals', 
+                    ha='center', fontsize=9, style='italic', alpha=0.7)
+        
+        plt.tight_layout(rect=[0, 0.05, 0.85, 1])  # Leave room for legend and footnote
         return fig
     
     # Create all four key figures
@@ -122,8 +161,8 @@ def visualize_prosecution(prosecution_analysis):
     
     years = sorted(df["Year"].dropna().unique().tolist())
     
-    def _create_figure(dsub, y_col, title, ylabel):
-        """Create a single publication-quality line plot"""
+    def _create_figure(dsub, y_col, title, ylabel, show_errors=True, show_n=True):
+        """Create a single publication-quality line plot with error bars and sample sizes"""
         fig, ax = plt.subplots(figsize=(10, 7))
         
         for race in color_map.keys():
@@ -131,10 +170,34 @@ def visualize_prosecution(prosecution_analysis):
             if len(d) > 0 and d[y_col].notna().any():
                 linewidth = 2.5 if race == "White" else 2
                 linestyle = '--' if race == "White" else '-'
-                ax.plot(d["Year"], d[y_col], 
+                
+                # Apply horizontal offset
+                x_vals = d["Year"]
+                
+                # Plot main line
+                ax.plot(x_vals, d[y_col], 
                        marker="o", markersize=8,
                        linewidth=linewidth, linestyle=linestyle,
                        color=color_map[race], label=race)
+                
+                # Add error bars if available and requested
+                if show_errors:
+                    se_col = f"{y_col} SE"
+                    if se_col in d.columns and d[se_col].notna().any():
+                        ax.errorbar(x_vals, d[y_col], yerr=d[se_col]*1.96,
+                                  fmt='none', ecolor=color_map[race], 
+                                  alpha=0.2, capsize=3, capthick=1.2)
+                
+                # Add sample size annotations if requested
+                if show_n and "Total Charges" in d.columns:
+                    for _, row in d.iterrows():
+                        n = int(row["Total Charges"])
+                        x_pos = row["Year"]
+                        ax.annotate(f'n={n:,}', 
+                                  xy=(x_pos, row[y_col]),
+                                  xytext=(0, 10), textcoords='offset points',
+                                  fontsize=9, ha='center', alpha=0.8,
+                                  color=color_map[race])
         
         ax.set_xlabel("Year", fontsize=12, fontweight='bold')
         ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
@@ -148,7 +211,7 @@ def visualize_prosecution(prosecution_analysis):
         # Format y-axis as percentage
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
         
-        plt.tight_layout(rect=[0, 0, 0.85, 1])  # Leave room for legend on right
+        plt.tight_layout(rect=[0, 0.05, 0.85, 1])  # Leave room for legend and footnote
         return fig
     
     # Create figures for each statute level
@@ -168,83 +231,178 @@ def visualize_prosecution(prosecution_analysis):
     
     return figs
 
-def create_sensitivity_visualization(comparison_df):
+def create_sensitivity_visualization(strict_df, mixed_df):
+    """
+    Create publication-ready side-by-side comparison of strict vs. mixed search classifications.
+    
+    Parameters
+    ----------
+    strict_df : pandas.DataFrame
+        Policing analysis with strict discretionary classification
+    mixed_df : pandas.DataFrame
+        Policing analysis with mixed discretionary classification
+        
+    Returns
+    -------
+    matplotlib.figure.Figure
+        Publication-ready comparison figure
+    """
 
     # Filter to most recent year automatically
-    latest_year = comparison_df['Year'].max()
-    df = comparison_df[comparison_df['Year'] == latest_year].copy()
+    latest_year = strict_df['Year'].max()
+    strict = strict_df[strict_df['Year'] == latest_year].copy()
+    mixed = mixed_df[mixed_df['Year'] == latest_year].copy()
 
     race_order = [
-    "Black/African American",
-    "Hispanic/Latino",
-    "White",
-    "Asian",
-    "Other"
+        "Black/African American",
+        "Hispanic/Latino",
+        "White",
+        "Asian",
+        "Other"
     ]
 
-    df = df.set_index("Perceived Race").loc[race_order].reset_index()
+    # Sort both dataframes by race order
+    strict = strict.set_index("Perceived Race").loc[race_order].reset_index()
+    mixed = mixed.set_index("Perceived Race").loc[race_order].reset_index()
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    # Create figure with improved styling
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
     fig.suptitle(
-        f'Sensitivity Analysis: Strict vs. Mixed Classification ({latest_year})',
-        fontsize=14,
-        fontweight='bold'
+        f'Sensitivity Analysis: Strict vs. Mixed Search Classification ({latest_year})',
+        fontsize=16,
+        fontweight='bold',
+        y=0.98
     )
 
-    x = range(len(df))
-    width = 0.35
+    x = range(len(strict))
+    width = 0.4  # Increased from 0.35 to widen bars
 
-    # ---- Search Rates ----
-    strict_search = df['Search Rate (Strict)'] * 100
-    mixed_search = df['Search Rate (Mixed)'] * 100
+    # Define colors
+    strict_color = '#0072B2'  # Blue
+    mixed_color = '#D55E00'   # Orange
 
-    axes[0].bar(
+    # ---- Panel A: Search Rates ----
+    strict_search = strict['Search Rate'] * 100
+    mixed_search = mixed['Search Rate'] * 100
+    
+    # Calculate standard errors in percentage points
+    strict_se = strict['Search Rate SE'] * 100 * 1.96  # 95% CI
+    mixed_se = mixed['Search Rate SE'] * 100 * 1.96
+
+    bars1 = axes[0].bar(
         [i - width/2 for i in x],
         strict_search,
         width,
-        label='Strict',
-        color='#0072B2'
+        label='Strict (discretionary only)',
+        color=strict_color,
+        alpha=0.8,
+        yerr=strict_se,
+        capsize=4,
+        error_kw={'linewidth': 1.5, 'alpha': 0.6}
     )
 
-    axes[0].bar(
+    bars2 = axes[0].bar(
         [i + width/2 for i in x],
         mixed_search,
         width,
-        label='Mixed',
-        color='#D55E00'
+        label='Mixed (includes multi-basis)',
+        color=mixed_color,
+        alpha=0.8,
+        yerr=mixed_se,
+        capsize=4,
+        error_kw={'linewidth': 1.5, 'alpha': 0.6}
     )
 
-    axes[0].set_title('Search Rate (%)')
+    # Add value labels on bars with sample sizes
+    max_y_search = 0  # Track maximum y value for axis limit
+    for i, (s_val, m_val) in enumerate(zip(strict_search, mixed_search)):
+        s_n = int(strict.iloc[i]['Search Count'])
+        m_n = int(mixed.iloc[i]['Search Count'])
+        
+        axes[0].text(i - width/2, s_val + strict_se.iloc[i] + 0.5,
+                    f'{s_val:.1f}%\n(n={s_n:,})',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
+        axes[0].text(i + width/2, m_val + mixed_se.iloc[i] + 0.5,
+                    f'{m_val:.1f}%\n(n={m_n:,})',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
+        
+        # Update max y value (bar height + error bar + annotation space)
+        max_y_search = max(max_y_search, 
+                          s_val + strict_se.iloc[i] + 3,
+                          m_val + mixed_se.iloc[i] + 3)
+
+    axes[0].set_title('(A) Conditional Search Rate', fontsize=13, fontweight='bold', pad=15)
+    axes[0].set_ylabel('Search Rate (%)', fontsize=12, fontweight='bold')
+    axes[0].set_xlabel('Perceived Race', fontsize=12, fontweight='bold')
     axes[0].set_xticks(x)
-    axes[0].set_xticklabels(df['Perceived Race'], rotation=45, ha='right')
-    axes[0].legend()
+    axes[0].set_xticklabels(strict['Perceived Race'], rotation=45, ha='right', fontsize=10)
+    axes[0].legend(fontsize=10, frameon=True, shadow=True)
+    axes[0].grid(True, alpha=0.3, linestyle=':', axis='y')
+    axes[0].set_axisbelow(True)
+    # Automatically adjust y-axis limit to prevent label clipping
+    axes[0].set_ylim(0, max_y_search)
 
-    # ---- Hit Rates ----
-    strict_hit = df['Hit Rate (Strict)'] * 100
-    mixed_hit = df['Hit Rate (Mixed)'] * 100
+    # ---- Panel B: Hit Rates ----
+    strict_hit = strict['Hit Rate'] * 100
+    mixed_hit = mixed['Hit Rate'] * 100
+    
+    strict_hit_se = strict['Hit Rate SE'] * 100 * 1.96
+    mixed_hit_se = mixed['Hit Rate SE'] * 100 * 1.96
 
-    axes[1].bar(
+    bars3 = axes[1].bar(
         [i - width/2 for i in x],
         strict_hit,
         width,
-        label='Strict',
-        color='#0072B2'
+        label='Strict (discretionary only)',
+        color=strict_color,
+        alpha=0.8,
+        yerr=strict_hit_se,
+        capsize=4,
+        error_kw={'linewidth': 1.5, 'alpha': 0.6}
     )
 
-    axes[1].bar(
+    bars4 = axes[1].bar(
         [i + width/2 for i in x],
         mixed_hit,
         width,
-        label='Mixed',
-        color='#D55E00'
+        label='Mixed (includes multi-basis)',
+        color=mixed_color,
+        alpha=0.8,
+        yerr=mixed_hit_se,
+        capsize=4,
+        error_kw={'linewidth': 1.5, 'alpha': 0.6}
     )
 
-    axes[1].set_title('Hit Rate (%)')
-    axes[1].set_xticks(x)
-    axes[1].set_xticklabels(df['Perceived Race'], rotation=45, ha='right')
-    axes[1].legend()
+    # Add value labels on bars with sample sizes
+    max_y_hit = 0  # Track maximum y value for axis limit
+    for i, (s_val, m_val) in enumerate(zip(strict_hit, mixed_hit)):
+        s_n = int(strict.iloc[i]['Hit Count'])
+        m_n = int(mixed.iloc[i]['Hit Count'])
+        
+        axes[1].text(i - width/2, s_val + strict_hit_se.iloc[i] + 1,
+                    f'{s_val:.1f}%\n(n={s_n:,})',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
+        axes[1].text(i + width/2, m_val + mixed_hit_se.iloc[i] + 1,
+                    f'{m_val:.1f}%\n(n={m_n:,})',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
+        
+        # Update max y value (bar height + error bar + annotation space)
+        max_y_hit = max(max_y_hit, 
+                       s_val + strict_hit_se.iloc[i] + 5,
+                       m_val + mixed_hit_se.iloc[i] + 5)
 
-    plt.tight_layout()
+    axes[1].set_title('(B) Contraband Hit Rate', fontsize=13, fontweight='bold', pad=15)
+    axes[1].set_ylabel('Hit Rate (%)', fontsize=12, fontweight='bold')
+    axes[1].set_xlabel('Perceived Race', fontsize=12, fontweight='bold')
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(mixed['Perceived Race'], rotation=45, ha='right', fontsize=10)
+    axes[1].legend(fontsize=10, frameon=True, shadow=True)
+    axes[1].grid(True, alpha=0.3, linestyle=':', axis='y')
+    axes[1].set_axisbelow(True)
+    # Automatically adjust y-axis limit to prevent label clipping
+    axes[1].set_ylim(0, max_y_hit)
+
+    plt.tight_layout(rect=[0, 0.05, 1, 0.96])
     return fig
 
 

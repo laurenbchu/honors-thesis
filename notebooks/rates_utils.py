@@ -118,6 +118,8 @@ def policing_rates(df, census):
     """
     Build a race × year policing summary table for discretionary stops only,
     measuring discretionary search behavior.
+    
+    Includes standard errors for rates and per-capita metrics.
     """
 
     g = df.groupby(["year", "race_std"])
@@ -137,7 +139,7 @@ def policing_rates(df, census):
         "Hit_Count": "Hit Count",
     })
 
-    # 5. Rates
+    # Calculate rates
     summary["Search Rate"] = (
         summary["Search Count"] / summary["Stop Count"]
     )
@@ -148,7 +150,18 @@ def policing_rates(df, census):
         np.nan
     )
 
-    # 6. Add population
+    # Calculate standard errors for rates using binomial proportion formula: SE = sqrt(p(1-p)/n)
+    summary["Search Rate SE"] = np.sqrt(
+        summary["Search Rate"] * (1 - summary["Search Rate"]) / summary["Stop Count"]
+    )
+    
+    summary["Hit Rate SE"] = np.where(
+        summary["Search Count"] > 0,
+        np.sqrt(summary["Hit Rate"] * (1 - summary["Hit Rate"]) / summary["Search Count"]),
+        np.nan
+    )
+
+    # Add population
     summary["Population"] = summary["Perceived Race"].map(census)
 
     # Per-capita rates (per 1,000 residents)
@@ -160,6 +173,16 @@ def policing_rates(df, census):
     summary["Searches per 1,000"] = (
         summary["Search Count"] / summary["Population"]
     ) * per
+    
+    # Standard errors for per-capita rates
+    # Using Poisson approximation for count data: SE = sqrt(count) / population * 1000
+    summary["Stops per 1,000 SE"] = (
+        np.sqrt(summary["Stop Count"]) / summary["Population"]
+    ) * per
+    
+    summary["Searches per 1,000 SE"] = (
+        np.sqrt(summary["Search Count"]) / summary["Population"]
+    ) * per
 
     return summary
 
@@ -170,8 +193,9 @@ def prosecution_rates_by_statute_level(prosecution):
 
     Returns:
         - Total Charges
-        - Charge Rate
         - Enhancement Rate
+        - Standard Error
+        - 95% Confidence Intervals
     """
 
     df = prosecution.copy()
@@ -193,6 +217,21 @@ def prosecution_rates_by_statute_level(prosecution):
           )
           .reset_index()
     )
+    
+    # Calculate standard error: SE = sqrt(p * (1-p) / n)
+    summary["Enhancement Rate SE"] = np.sqrt(
+        (summary["Enhancement Rate"] * (1 - summary["Enhancement Rate"])) / 
+        summary["Total Charges"]
+    )
+    
+    # Calculate 95% confidence interval (±1.96 * SE)
+    summary["Enhancement Rate CI Lower"] = (
+        summary["Enhancement Rate"] - 1.96 * summary["Enhancement Rate SE"]
+    ).clip(lower=0)
+    
+    summary["Enhancement Rate CI Upper"] = (
+        summary["Enhancement Rate"] + 1.96 * summary["Enhancement Rate SE"]
+    ).clip(upper=1)
 
     return summary
 
@@ -201,6 +240,8 @@ def policing_rates_mixed(df, census):
     """
     Build a race × year policing summary table for discretionary stops,
     treating mixed search bases as discretionary (sensitivity analysis).
+    
+    Includes standard errors for rates and per-capita metrics.
     """
 
     g = df.groupby(["year", "race_std"])
@@ -231,6 +272,17 @@ def policing_rates_mixed(df, census):
         np.nan
     )
 
+    # Calculate standard errors for rates
+    summary["Search Rate SE"] = np.sqrt(
+        summary["Search Rate"] * (1 - summary["Search Rate"]) / summary["Stop Count"]
+    )
+    
+    summary["Hit Rate SE"] = np.where(
+        summary["Search Count"] > 0,
+        np.sqrt(summary["Hit Rate"] * (1 - summary["Hit Rate"]) / summary["Search Count"]),
+        np.nan
+    )
+
     # Add population
     summary["Population"] = summary["Perceived Race"].map(census)
 
@@ -243,76 +295,25 @@ def policing_rates_mixed(df, census):
     summary["Searches per 1,000"] = (
         summary["Search Count"] / summary["Population"]
     ) * per
+    
+    # Standard errors for per-capita rates
+    summary["Stops per 1,000 SE"] = (
+        np.sqrt(summary["Stop Count"]) / summary["Population"]
+    ) * per
+    
+    summary["Searches per 1,000 SE"] = (
+        np.sqrt(summary["Search Count"]) / summary["Population"]
+    ) * per
 
     return summary
 
 
-def compare_search_classifications(policing_strict, policing_mixed):
-
-    # Merge the two approaches
-    comparison = policing_strict.merge(
-        policing_mixed,
-        on=['Year', 'Perceived Race', 'Population'],
-        suffixes=(' (Strict)', ' (Mixed)')
-    )
-
-    summary_2022 = comparison[comparison['Year'] == 2022].copy()
-    summary_2023 = comparison[comparison['Year'] == 2023].copy()
-    summary_2024 = comparison[comparison['Year'] == 2024].copy()
-
-    # Calculate disparity ratios (baseline = White)
-    def calc_disparities(df, suffix):
-        baseline_rows = df[df['Perceived Race'] == 'White']
-        if len(baseline_rows) != 1:
-            raise ValueError(f"Expected exactly 1 White row for Year=2024, found {len(baseline_rows)}.")
-        baseline = baseline_rows.iloc[0]
-
-        ratios = []
-        for _, row in df.iterrows():
-            sr_base = baseline[f'Search Rate{suffix}']
-            hr_base = baseline[f'Hit Rate{suffix}']
-
-            sr = row[f'Search Rate{suffix}']
-            hr = row[f'Hit Rate{suffix}']
-
-            ratios.append({
-                'Perceived Race': row['Perceived Race'],
-                f'Search Rate Ratio{suffix}': (
-                    sr / sr_base if pd.notna(sr_base) and sr_base != 0 else np.nan
-                ),
-                f'Hit Rate Ratio{suffix}': (
-                    hr / hr_base if pd.notna(hr_base) and hr_base != 0 else np.nan
-                )
-            })
-
-        return pd.DataFrame(ratios)
-
-    strict_ratios = calc_disparities(summary_2024, ' (Strict)')
-    mixed_ratios  = calc_disparities(summary_2024, ' (Mixed)')
-
-    disparity_comparison = strict_ratios.merge(
-        mixed_ratios[['Perceived Race',
-                      'Search Rate Ratio (Mixed)',
-                      'Hit Rate Ratio (Mixed)']],
-        on='Perceived Race',
-        how='inner'
-    )
-
-    # Reorder columns for clarity
-    disparity_comparison = disparity_comparison[
-    [
-        'Perceived Race',
-        'Search Rate Ratio (Strict)',
-        'Search Rate Ratio (Mixed)',
-        'Hit Rate Ratio (Strict)',
-        'Hit Rate Ratio (Mixed)'
-    ]]
-
-    return comparison, summary_2022, summary_2023, summary_2024, disparity_comparison
-
-
 def calculate_enhancement_rates_by_category(df):
-    """Calculate enhancement rates by race for each charge category"""
+    """
+    Calculate enhancement rates by race for each charge category.
+    
+    Includes standard errors and 95% confidence intervals.
+    """
     
     # Group by race and charge category
     grouped = df.groupby(['race_std', 'charge_category']).agg({

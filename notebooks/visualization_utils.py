@@ -11,7 +11,7 @@ def visualization_setup(df, race_col):
     """
     out = df.copy()
 
-    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian", "Other"]
+    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
 
     if race_col in out.columns:
         out[race_col] = pd.Categorical(out[race_col], categories=race_order, ordered=True)
@@ -35,8 +35,7 @@ def visualize_policing(policing_analysis):
         "Black/African American": "#D55E00",  # vermillion
         "Hispanic/Latino": "#0072B2",  # blue
         "White": "#999999",  # gray (baseline)
-        "Asian": "#009E73",  # bluish green
-        "Other": "#CC79A7"  # reddish purple
+        "Asian": "#009E73"  # bluish green
     }
     
     years = sorted(df["Year"].dropna().unique().tolist())
@@ -67,7 +66,7 @@ def visualize_policing(policing_analysis):
                     if se_col in d.columns and d[se_col].notna().any():
                         ax.errorbar(x_vals, d[y_col], yerr=d[se_col]*1.96,
                                   fmt='none', ecolor=color_map[race], 
-                                  alpha=0.2, capsize=3, capthick=1.2)
+                                  alpha=0.5, capsize=3, capthick=1.2)
                 
                 # Add sample size annotations if requested
                 if show_n:
@@ -103,11 +102,6 @@ def visualize_policing(policing_analysis):
             ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
         else:
             ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1f}'))
-        
-        # Add note about error bars
-        if show_errors:
-            fig.text(0.5, 0.02, 'Error bars show 95% confidence intervals', 
-                    ha='center', fontsize=9, style='italic', alpha=0.7)
         
         plt.tight_layout(rect=[0, 0.05, 0.85, 1])  # Leave room for legend and footnote
         return fig
@@ -155,8 +149,7 @@ def visualize_prosecution(prosecution_analysis):
         "Black/African American": "#D55E00",  # vermillion
         "Hispanic/Latino": "#0072B2",  # blue
         "White": "#999999",  # gray (baseline)
-        "Asian": "#009E73",  # bluish green
-        "Other": "#CC79A7"  # reddish purple
+        "Asian": "#009E73"  # bluish green
     }
     
     years = sorted(df["Year"].dropna().unique().tolist())
@@ -186,7 +179,7 @@ def visualize_prosecution(prosecution_analysis):
                     if se_col in d.columns and d[se_col].notna().any():
                         ax.errorbar(x_vals, d[y_col], yerr=d[se_col]*1.96,
                                   fmt='none', ecolor=color_map[race], 
-                                  alpha=0.2, capsize=3, capthick=1.2)
+                                  alpha=0.5, capsize=3, capthick=1.2)
                 
                 # Add sample size annotations if requested
                 if show_n and "Total Charges" in d.columns:
@@ -257,8 +250,7 @@ def create_sensitivity_visualization(strict_df, mixed_df):
         "Black/African American",
         "Hispanic/Latino",
         "White",
-        "Asian",
-        "Other"
+        "Asian"
     ]
 
     # Sort both dataframes by race order

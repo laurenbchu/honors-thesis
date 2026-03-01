@@ -70,22 +70,8 @@ def add_standardized_race(df, race_col):
 
 def census_rollup(census_relabeled):
     """
-    Convert a relabeled Decennial PL P2 census table to your coarse race population Series.
-
-    This function:
-      1) coerces all non-id columns to numeric
-      2) returns a coarse population Series with keys:
-         ["Hispanic/Latino", "White", "Black/African American", "Asian", "Other"]
-
-    Parameters
-    ----------
-    census_relabeled : pandas.DataFrame
-        Census P2 table with readable labels (after renaming columns)
-
-    Returns
-    -------
-    pandas.Series
-        Coarse race populations
+    Convert a relabeled Decennial PL P2 census table to the coarse race population Series.
+    "Hispanic/Latino", "White", "Black/African American", "Asian", "Other"
     """
 
     id_cols = ["NAME", "Geography", "Uniform Census Geography Identifier clause"]
@@ -140,10 +126,13 @@ def policing_rates(df, census):
     })
 
     # Calculate rates
+
+    # Number of discretionary searches out of discretionary stops
     summary["Search Rate"] = (
         summary["Search Count"] / summary["Stop Count"]
     )
 
+    # Number of hits out of discretionary searches
     summary["Hit Rate"] = np.where(
         summary["Search Count"] > 0,
         summary["Hit Count"] / summary["Search Count"],

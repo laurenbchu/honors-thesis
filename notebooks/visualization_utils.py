@@ -209,7 +209,7 @@ def create_sensitivity_visualization(strict_df, mixed_df):
     strict_se = strict['Search Rate SE'] * 100 * 1.96  # 95% CI
     mixed_se = mixed['Search Rate SE'] * 100 * 1.96
 
-    bars1 = axes[0].bar(
+    bars1 = axes[0].bar(  # noqa: F841
         [i - width/2 for i in x],
         strict_search,
         width,
@@ -221,7 +221,7 @@ def create_sensitivity_visualization(strict_df, mixed_df):
         error_kw={'linewidth': 1.5, 'alpha': 0.6}
     )
 
-    bars2 = axes[0].bar(
+    bars2 = axes[0].bar(  # noqa: F841
         [i + width/2 for i in x],
         mixed_search,
         width,
@@ -269,7 +269,7 @@ def create_sensitivity_visualization(strict_df, mixed_df):
     strict_hit_se = strict['Hit Rate SE'] * 100 * 1.96
     mixed_hit_se = mixed['Hit Rate SE'] * 100 * 1.96
 
-    bars3 = axes[1].bar(
+    bars3 = axes[1].bar(  # noqa: F841
         [i - width/2 for i in x],
         strict_hit,
         width,
@@ -281,7 +281,7 @@ def create_sensitivity_visualization(strict_df, mixed_df):
         error_kw={'linewidth': 1.5, 'alpha': 0.6}
     )
 
-    bars4 = axes[1].bar(
+    bars4 = axes[1].bar(  # noqa: F841
         [i + width/2 for i in x],
         mixed_hit,
         width,
@@ -554,7 +554,7 @@ def plot_felony_vs_misdemeanor_by_race(
         base_colors = [color_map.get(r, "#7f7f7f") for r in race_order]
         alpha = 0.90 if i == 0 else 0.55
 
-        bars = ax.bar(
+        bars = ax.bar(  # noqa: F841
             xpos, y, width=width, color=base_colors, alpha=alpha,
             edgecolor="black", linewidth=0.6, label=lvl
         )
@@ -585,3 +585,194 @@ def plot_felony_vs_misdemeanor_by_race(
 
     fig.tight_layout()
     return fig
+
+
+def plot_wobbler_felony_rates(wobbler_summary):
+    """
+    Bar chart showing felony filing rates for wobbler charges by race with 95% CI.
+    """
+    df = wobbler_summary.copy()
+    
+    # Ensure index is a column for easier processing
+    if df.index.name == 'Canonical Race':
+        df = df.reset_index()
+    
+    # Apply race ordering
+    df['Canonical Race'] = pd.Categorical(df['Canonical Race'], categories=RACE_ORDER, ordered=True)
+    df = df.sort_values('Canonical Race')
+    
+    # Extract data
+    races = df['Canonical Race'].astype(str).to_list()
+    felony_rates = df['Felony Rate'].to_numpy()
+    se = df['Felony Rate SE'].to_numpy()
+    totals = df['Total'].to_numpy()
+    
+    # Convert to percentage
+    felony_rates = felony_rates * 100
+    se = se * 100
+    
+    # Calculate 95% CI
+    errors = se * Z
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x = np.arange(len(races))
+    colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
+    
+    # Create bars
+    bars = ax.bar(  # noqa: F841
+        x, felony_rates,
+        color=colors,
+        alpha=0.85,
+        edgecolor='black',
+        linewidth=1.2
+    )
+    
+    # Add error bars
+    ax.errorbar(
+        x, felony_rates,
+        yerr=errors,
+        fmt='none',
+        ecolor='black',
+        alpha=0.55,
+        capsize=5,
+        capthick=1.5,
+        linewidth=1.5
+    )
+    
+    # Set labels and title
+    ylabel = 'Wobbler Charged as Felony (%)'
+    ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+    ax.set_xlabel('Canonical Race', fontsize=12, fontweight='bold')
+    ax.set_title(
+        'Wobbler Charges: Felony Filing Rate by Race\n(with 95% Confidence Intervals)',
+        fontsize=14,
+        fontweight='bold',
+        pad=20
+    )
+    
+    # Set x-axis
+    ax.set_xticks(x)
+    ax.set_xticklabels(races, rotation=45, ha='right', fontsize=10)
+    
+    # Add grid
+    ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.set_axisbelow(True)
+    
+    # Add sample sizes as text above bars
+    for i, (rate, err, total) in enumerate(zip(felony_rates, errors, totals)):
+        if np.isfinite(rate):
+            ax.text(
+                i, rate + err + 2,
+                f'n={int(total):,}',
+                ha='center',
+                va='bottom',
+                fontsize=9,
+                fontweight='bold'
+            )
+    
+    # Set y-axis limits to prevent label clipping
+    ymax = np.nanmax(felony_rates + errors)
+    if np.isfinite(ymax):
+        ax.set_ylim(0, min(100, ymax * 1.15))
+    else:
+        ax.set_ylim(0, 100)
+    
+    fig.tight_layout()
+    return fig
+
+
+def create_enhancement_summary_table(enhancement_by_primary):
+    """
+    Overall enhancement rates by race and statute level (Felony vs Misdemeanor).
+    Returns a long-format table with columns: Canonical Race, Statute Level, Number of Cases, Enhancement Rate (%).
+    Race names are displayed only once per racial group (blanked for second statute level row).
+    """
+    summary = (
+        enhancement_by_primary
+        .groupby(['race_std', 'primary_statute_level'], as_index=False)
+        .agg({'Enhanced': 'sum', 'N': 'sum'})
+    )
+    
+    # Calculate enhancement rate and SE (as proportions)
+    summary['Enhancement Rate'] = summary['Enhanced'] / summary['N']
+    summary['SE'] = np.sqrt(
+        summary['Enhancement Rate'] * (1 - summary['Enhancement Rate']) / summary['N']
+    )
+    
+    # Convert to percentage and format with CI using the standard format
+    summary['Enhancement Rate (%)'] = summary.apply(
+        lambda row: fmt_est_ci(row['Enhancement Rate'] * 100, row['SE'] * 100, digits=2),
+        axis=1
+    )
+    
+    # Select and rename columns for display
+    result = summary[['race_std', 'primary_statute_level', 'N', 'Enhancement Rate (%)']].copy()
+    result.columns = ['Canonical Race', 'Statute Level', 'Number of Cases', 'Enhancement Rate (%)']
+    
+    # Sort by race order and statute level
+    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
+    statute_order = ["Misdemeanor", "Felony"]
+    
+    result['race_sort'] = result['Canonical Race'].map({race: i for i, race in enumerate(race_order)})
+    result['statute_sort'] = result['Statute Level'].map({stat: i for i, stat in enumerate(statute_order)})
+    result = result.sort_values(['race_sort', 'statute_sort']).drop(['race_sort', 'statute_sort'], axis=1)
+    
+    # Blank out duplicate race names (show race only once per group)
+    result['Canonical Race'] = result['Canonical Race'].mask(
+        result['Canonical Race'].eq(result['Canonical Race'].shift()), ''
+    )
+    
+    return result.reset_index(drop=True)
+
+
+def create_charge_category_table(enhancement_primary_top6):
+    """
+    Enhancement rates by charge category for top 6 most common charges.
+    Returns a long-format table grouped by charge category and race.
+    Charge category names are displayed only once per category group (blanked for subsequent race rows).
+    """
+    by_category = (
+        enhancement_primary_top6
+        .groupby(['primary_charge_category', 'race_std'], as_index=False)
+        .agg({'Enhanced': 'sum', 'N': 'sum'})
+    )
+    
+    # Calculate enhancement rate and SE (as proportions)
+    by_category['Enhancement Rate'] = by_category['Enhanced'] / by_category['N']
+    by_category['SE'] = np.sqrt(
+        by_category['Enhancement Rate'] * (1 - by_category['Enhancement Rate']) / by_category['N']
+    )
+    
+    # Format enhancement rate with CI in the standard format
+    by_category['Enhancement Rate (%)'] = by_category.apply(
+        lambda row: fmt_est_ci(row['Enhancement Rate'] * 100, row['SE'] * 100, digits=2),
+        axis=1
+    )
+    
+    # Select and rename columns for display
+    result = by_category[[
+        'primary_charge_category', 'race_std', 'N', 'Enhancement Rate (%)'
+    ]].copy()
+    result.columns = ['Charge Category', 'Canonical Race', 'Number of Cases', 'Enhancement Rate (%)']
+    
+    # Sort by category (by total N) and then by race
+    category_order = (
+        by_category.groupby('primary_charge_category')['N']
+        .sum()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
+    
+    result['cat_sort'] = result['Charge Category'].map({cat: i for i, cat in enumerate(category_order)})
+    result['race_sort'] = result['Canonical Race'].map({race: i for i, race in enumerate(race_order)})
+    result = result.sort_values(['cat_sort', 'race_sort']).drop(['cat_sort', 'race_sort'], axis=1)
+    
+    # Blank out duplicate charge category names (show category only once per group)
+    result['Charge Category'] = result['Charge Category'].mask(
+        result['Charge Category'].eq(result['Charge Category'].shift()), ''
+    )
+    
+    return result.reset_index(drop=True)

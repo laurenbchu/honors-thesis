@@ -258,6 +258,7 @@ def policing_rates_mixed(df, census):
 
     return summary
 
+
 def categorize_charge(charge_desc):
     """
     Categorize SUBSTANTIVE charges into broad crime types.
@@ -336,32 +337,133 @@ def categorize_charge(charge_desc):
         return 'Other'
 
 
-def enhancement_rates_by_category(df):
+CATEGORY_SEVERITY_ORDER = [
+    "Assault/Violence",
+    "Weapons",
+    "Sex Offense/Registration",
+    "Theft/Burglary/Robbery",
+    "Fraud/Identity Theft",
+    "Drug Possession/Paraphernalia",
+    "DUI",
+    "Vandalism",
+    "Vehicle-Related (non-DUI)",
+    "Obstruct/Resist Officer",
+    "Disorderly Conduct/Public Order",
+    "Other",
+]
+
+STATUTE_SEVERITY_ORDER = ["Felony", "Misdemeanor"]
+
+
+def assign_primary_charge_by_severity(df):
     """
-    Compute enhancement rates by category x race x year x statute
-    Among cases in category X, what fraction had any enhancement alleged?
+    Takes in charge-level rows and outputs case-level primary labels
     """
-    # Cases are assigned to their modal (most common) substantive charge category
-    case_level = (df
-                .groupby(['source_case_id', 'race_std', 'Year'])
-                .agg(
-                    any_enhancement=('any_enhancement_in_case', 'max'),
-                    # define a case "primary" category/statute for stratification
-                    charge_category=('charge_category', lambda x: x.value_counts().index[0]),
-                    statute_level=('statute_level', lambda x: x.value_counts().index[0])
-                )
-                .reset_index()
-                )
 
-    g = (case_level.groupby(['charge_category', 'race_std', 'Year', 'statute_level'])
-        .agg(Enhanced=('any_enhancement','sum'),
-            N=('any_enhancement','size'))
-        .reset_index())
+    df = df.copy()
 
-    g['Enhancement Rate'] = g['Enhanced'] / g['N']
+    # Keep only felony/misdemeanor rows
+    df = df[df["statute_level"].isin(STATUTE_SEVERITY_ORDER)].copy()
 
-    # SE + 95% CI (Wald). For small N, consider Wilson instead.
-    g['SE'] = np.sqrt(g['Enhancement Rate'] * (1 - g['Enhancement Rate']) / g['N'])
-    g['CI Lower'] = np.maximum(0, g['Enhancement Rate'] - 1.96 * g['SE'])
-    g['CI Upper'] = np.minimum(1, g['Enhancement Rate'] + 1.96 * g['SE'])
+    # Creating dictionaries for severity ranking
+    statute_rank_map = {s: i for i, s in enumerate(STATUTE_SEVERITY_ORDER)}
+    cat_rank_map = {c: i for i, c in enumerate(CATEGORY_SEVERITY_ORDER)}
+
+    # Assign severity ranks to each charge
+    df["_statute_rank"] = df["statute_level"].map(statute_rank_map).fillna(999).astype(int)
+    df["_cat_rank"] = df["charge_category"].map(cat_rank_map).fillna(999).astype(int)
+
+    # Count category frequency within case × statute × category
+    # Used as a tie breaker -- if two categories have the same statute level, we assign the primary category as the one with more charges in the case
+    counts = (
+        df.groupby(["source_case_id", "statute_level", "charge_category"], as_index=False)
+          .size()
+          .rename(columns={"size": "_cat_count"})
+    )
+
+    # Add ranks to the aggregated counts table
+    counts["_statute_rank"] = counts["statute_level"].map(statute_rank_map).fillna(999).astype(int)
+    counts["_cat_rank"] = counts["charge_category"].map(cat_rank_map).fillna(999).astype(int)
+
+    # Determine primary statute level (Felony if any felony exists)
+    primary_statute = (
+        counts.groupby("source_case_id", as_index=False)["_statute_rank"].min()
+              .rename(columns={"_statute_rank": "_primary_statute_rank"})
+    )
+
+    inv_statute_rank = {v: k for k, v in statute_rank_map.items()}
+
+    # Results in one row per case, with case id, primary statute rank, and primary statute level
+    primary_statute["primary_statute_level"] = primary_statute["_primary_statute_rank"].map(inv_statute_rank)
+
+    # Restrict to rows within primary statute level
+    counts = counts.merge(primary_statute[["source_case_id", "_primary_statute_rank"]],
+                          on="source_case_id", how="left")
+
+    # Adds each case's primary statute rank to the counts table
+    counts = counts[counts["_statute_rank"] == counts["_primary_statute_rank"]].copy()
+
+    # Choose primary charge category within that primary statute level
+    counts = counts.sort_values(
+        by=["source_case_id", "_cat_rank", "_cat_count", "charge_category"],
+        ascending=[True, True, False, True]
+    )
+
+    # After sorting, picks the top row per case for the primary charge category
+    primary_cat = (
+        counts.drop_duplicates("source_case_id", keep="first")
+              [["source_case_id", "charge_category"]]
+              .rename(columns={"charge_category": "primary_charge_category"})
+    )
+
+    # Combine primary statute and primary category back to case level table
+    result = primary_statute[["source_case_id", "primary_statute_level"]] \
+        .merge(primary_cat, on="source_case_id", how="left")
+
+    # Returns one row per case, with case id, primary statute level (Felony/Misdemeanor), and primary charge category (Assault/Violence, DUI, etc.)
+    return result
+
+def enhancement_rates_by_primary_severity(df):
+    """
+    Returns enhancement rates grouped by:
+        primary_charge_category × race_std × Year × primary_statute_level
+    """
+
+    df = df.copy()
+
+    # Assign primary charge per case
+    primary = assign_primary_charge_by_severity(df)
+
+    # Collapse to one row per case
+    case_level = (
+        df.groupby("source_case_id", as_index=False)
+          .agg(
+              race_std=("race_std", "first"),
+              Year=("Year", "first"),
+              any_enhancement=("any_enhancement_in_case", "max")
+          )
+    )
+
+    # Adds each case's primary charge category and statute level to the case-level table
+    case_level = case_level.merge(primary, on="source_case_id", how="left")
+
+    # Compute enhancement rates by group
+    g = (
+        case_level.groupby(
+            ["primary_charge_category", "race_std", "Year", "primary_statute_level"],
+            as_index=False
+        )
+        .agg(
+            Enhanced=("any_enhancement", "sum"),
+            N=("any_enhancement", "size")
+        )
+    )
+
+    g["Enhancement Rate"] = g["Enhanced"] / g["N"]
+
+    # Compute standard error and CI
+    g["SE"] = np.sqrt(g["Enhancement Rate"] * (1 - g["Enhancement Rate"]) / g["N"])
+    g["CI Lower"] = np.maximum(0, g["Enhancement Rate"] - 1.96 * g["SE"])
+    g["CI Upper"] = np.minimum(1, g["Enhancement Rate"] + 1.96 * g["SE"])
+
     return g

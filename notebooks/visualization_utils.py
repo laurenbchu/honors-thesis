@@ -398,17 +398,17 @@ def _safe_visualization_setup(df, race_col):
         return out
 
 
-def _prep_df(df, statute_level=None):
+def _prep_df(df, primary_statute_level=None):
     """
-    Optional filter by statute_level.
+    Optional filter by primary_statute_level.
     Applies race ordering via visualization_setup (or fallback).
     """
     d = df.copy()
 
-    if statute_level is not None:
-        if "statute_level" not in d.columns:
-            raise ValueError("statute_level filter requested, but df has no 'statute_level' column.")
-        d = d[d["statute_level"] == statute_level].copy()
+    if primary_statute_level is not None:
+        if "primary_statute_level" not in d.columns:
+            raise ValueError("primary_statute_level filter requested, but df has no 'primary_statute_level' column.")
+        d = d[d["primary_statute_level"] == primary_statute_level].copy()
 
     if "race_std" not in d.columns:
         raise ValueError("df must contain 'race_std' column.")
@@ -417,27 +417,27 @@ def _prep_df(df, statute_level=None):
     return d
 
 def plot_top6_charge_categories_grid_pooled(
-    df, statute_level=None, percent=True,
+    df, primary_statute_level=None, percent=True,
     top_k=6, race_order=RACE_ORDER,
     color_map=COLOR_MAP, figsize=(18, 12)
 ):
     """
     2x3 grid: enhancement rate by race within each of top_k charge categories (pooled across years).
-    Expects df columns: charge_category, race_std, Enhanced, N (and optionally statute_level).
+    Expects df columns: primary_charge_category, race_std, Enhanced, N (and optionally primary_statute_level).
     """
-    d = _prep_df(df, statute_level=statute_level)
+    d = _prep_df(df, primary_statute_level=primary_statute_level)
 
-    if "charge_category" not in d.columns:
-        raise ValueError("df must contain 'charge_category' column.")
+    if "primary_charge_category" not in d.columns:
+        raise ValueError("df must contain 'primary_charge_category' column.")
 
     # Top categories by total N within filtered set
-    top_categories = (d.groupby("charge_category")["N"].sum()
+    top_categories = (d.groupby("primary_charge_category")["N"].sum()
                         .sort_values(ascending=False)
                         .head(top_k)
                         .index.tolist())
 
-    agg = (d[d["charge_category"].isin(top_categories)]
-             .groupby(["charge_category", "race_std"], as_index=False)
+    agg = (d[d["primary_charge_category"].isin(top_categories)]
+             .groupby(["primary_charge_category", "race_std"], as_index=False)
              .agg(Enhanced=("Enhanced", "sum"), N=("N", "sum")))
 
     agg["race_std"] = pd.Categorical(agg["race_std"], categories=race_order, ordered=True)
@@ -448,14 +448,14 @@ def plot_top6_charge_categories_grid_pooled(
 
     for idx, cat in enumerate(top_categories):
         ax = axes[idx]
-        cat_data = agg[agg["charge_category"] == cat].copy()
+        cat_data = agg[agg["primary_charge_category"] == cat].copy()
 
         # Reindex to force consistent race order, fill missing with 0
         cat_data = (cat_data.set_index("race_std")
                             .reindex(pd.Categorical(race_order, categories=race_order, ordered=True))
                             .reset_index()
                             .rename(columns={"index": "race_std"}))
-        cat_data["charge_category"] = cat
+        cat_data["primary_charge_category"] = cat
         cat_data["Enhanced"] = cat_data["Enhanced"].fillna(0)
         cat_data["N"] = cat_data["N"].fillna(0)
 
@@ -497,8 +497,8 @@ def plot_top6_charge_categories_grid_pooled(
         axes[j].axis("off")
 
     suptitle = (f"Case-Level Enhancement Rates by Race Across Top {top_k} Charge Categories (Pooled)"
-                if statute_level is None
-                else f"Case-Level {statute_level} Enhancement Rates by Race Across Top {top_k} Charge Categories")
+                if primary_statute_level is None
+                else f"Case-Level {primary_statute_level} Enhancement Rates by Race Across Top {top_k} Charge Categories")
     fig.suptitle(suptitle, fontsize=14, fontweight="bold", y=0.995)
 
     fig.tight_layout()
@@ -514,20 +514,20 @@ def plot_felony_vs_misdemeanor_by_race(
 ):
     """
     Grouped bars by race with Felony vs Misdemeanor series (each with 95% CI).
-    Expects df columns: statute_level, race_std, Enhanced, N.
+    Expects df columns: primary_statute_level, race_std, Enhanced, N.
     """
-    d = _prep_df(df, statute_level=None)
+    d = _prep_df(df, primary_statute_level=None)
 
-    if "statute_level" not in d.columns:
-        raise ValueError("df must contain 'statute_level' column.")
+    if "primary_statute_level" not in d.columns:
+        raise ValueError("df must contain 'primary_statute_level' column.")
 
-    d = d[d["statute_level"].isin(levels)].copy()
+    d = d[d["primary_statute_level"].isin(levels)].copy()
 
-    agg = (d.groupby(["statute_level", "race_std"], as_index=False)
+    agg = (d.groupby(["primary_statute_level", "race_std"], as_index=False)
              .agg(Enhanced=("Enhanced", "sum"), N=("N", "sum")))
 
     agg["race_std"] = pd.Categorical(agg["race_std"], categories=race_order, ordered=True)
-    agg["statute_level"] = pd.Categorical(agg["statute_level"], categories=list(levels), ordered=True)
+    agg["primary_statute_level"] = pd.Categorical(agg["primary_statute_level"], categories=list(levels), ordered=True)
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -535,7 +535,7 @@ def plot_felony_vs_misdemeanor_by_race(
     width = 0.38
 
     for i, lvl in enumerate(levels):
-        sub = (agg[agg["statute_level"] == lvl]
+        sub = (agg[agg["primary_statute_level"] == lvl]
                .set_index("race_std")
                .reindex(race_order))
 

@@ -187,55 +187,6 @@ def policing_rates(df, census):
     return summary
 
 
-def prosecution_rates_by_statute_level(prosecution):
-    """
-    Build a race × year × statute_level prosecution summary table.
-
-    Returns:
-        - Total Charges
-        - Enhancement Rate
-        - Standard Error
-        - 95% Confidence Intervals
-    """
-
-    df = prosecution.copy()
-
-    # Ensure standardized race column exists
-    if "Canonical Race" not in df.columns and "race_std" in df.columns:
-        df = df.rename(columns={"race_std": "Canonical Race"})
-
-    # Remove Infractions
-    df = df[df["statute_level"] != "Infraction"]
-
-    summary = (
-        df.groupby(["Canonical Race", "Year", "statute_level"])
-          .agg(
-              **{
-                  "Total Charges": ("was_filed_by_da", "size"),
-                  "Enhancement Rate": ("is_enhancement_charge", "mean"),
-              }
-          )
-          .reset_index()
-    )
-    
-    # Calculate standard error: SE = sqrt(p * (1-p) / n)
-    summary["Enhancement Rate SE"] = np.sqrt(
-        (summary["Enhancement Rate"] * (1 - summary["Enhancement Rate"])) / 
-        summary["Total Charges"]
-    )
-    
-    # Calculate 95% confidence interval (±1.96 * SE)
-    summary["Enhancement Rate CI Lower"] = (
-        summary["Enhancement Rate"] - 1.96 * summary["Enhancement Rate SE"]
-    ).clip(lower=0)
-    
-    summary["Enhancement Rate CI Upper"] = (
-        summary["Enhancement Rate"] + 1.96 * summary["Enhancement Rate SE"]
-    ).clip(upper=1)
-
-    return summary
-
-
 def policing_rates_mixed(df, census):
     """
     Build a race × year policing summary table for discretionary stops,
@@ -307,33 +258,110 @@ def policing_rates_mixed(df, census):
 
     return summary
 
+def categorize_charge(charge_desc):
+    """
+    Categorize SUBSTANTIVE charges into broad crime types.
+    Note: This should only be called on non-enhancement charges.
+    """
+    if pd.isna(charge_desc):
+        return 'Other'
+    
+    charge_desc = str(charge_desc).upper()
 
-def calculate_enhancement_rates_by_category(df):
+    # Drug possession
+    if any(word in charge_desc for word in ['POSSESS CONTROLLED', 'POSSESS NARCOTIC', 
+        'POSSESS UNLAWFUL PARAPHERNALIA', 'USE/UNDER INFLUENCE OF CONTROLLED SUBSTANCE', 
+        'BRING CONTROLLED SUBSTANCE', 'NITROUS OXIDE', 'TOLUENE', 'POSS DRGS', 'BRING DRGS', 
+        'BRING DRUGS', 'NARCOTIC', 'CONTROLLED', 'MARIJUANA', 'COCAINE', 'FALSE COMPARTMENT',
+        'TRANSPORT/ETC CONTROLLED SUBSTANCE', 'TRANSPORT/SELL NARCOTIC/CONTROLLED SUBSTANCE']):
+        return 'Drug Possession/Paraphernalia'
+    
+    # DUI related
+    if any(word in charge_desc for word in ['DUI', 'DRIVING UNDER INFLUENCE', '0.08', '0.05', 'WHILE INTOXICATED']):
+        return 'DUI'
+
+    # Resist/obstruct
+    elif any(word in charge_desc for word in ['OBSTRUCT', 'RESIST', 'GIVE FALSE ID TO PO', 
+        'DESTROY/CONCEAL', 'EVADING PEACE OFFICER', 'FALSE IDENTIFICATION', 'FALSE INFORMATION', 'DISSUADE',
+        'FAIL TO PRVD', 'FAIL TO PROVIDE']):
+        return 'Obstruct/Resist Officer'
+
+    # Theft
+    elif any(word in charge_desc for word in ['THEFT', 'BURGLARY', 'ROBBERY', 'STOLEN', 
+        'SHOPLIFTING', 'APPROPRIATE LOST PROPERTY', 'BURG', 'CARJACKING', 'EMBEZZLEMENT', 'UNAUTH ENTR', 
+        'UNAUTH ENTRY', 'THFT']):
+        return 'Theft/Burglary/Robbery'
+
+    # Vandalism
+    elif any(word in charge_desc for word in ['VANDALISM', 'ARSON', 'DAMAGE/DESTROY', 'VANDALIZE', 'CAUSING FIRE']):
+        return 'Vandalism'
+
+    # Vehicle related (non-DUI)
+    elif any(word in charge_desc for word in ['VEHICLE', 'DRIVING WITHOUT', 'FOLLOWING ACCIDENT', 
+        'RECKLESS DRIVING', 'EVADING A PEACE OFFICER:WRONG WAY DRIVER', 'HIT AND RUN', 'SPEED CONTEST', 
+        'DISABLED PERSON PLACARD']):
+        return 'Vehicle-Related (non-DUI)'
+
+    # Violence
+    elif any(word in charge_desc for word in ['ASSAULT', 'BATTERY', 'VIOLENCE', 'ADW', 'CHILD ABUSE', 
+        'MURDER', 'ELDER', 'CHLD ABUSE', 'KIDNAPPING', 'FALSE IMPRISONMENT', 'PRVNT WIT', 
+        'INFLICT CORPORAL INJURY ON SPOUSE/COHABITANT', 'THREAT', 'THREATEN', 'HARASSMENT']):
+        return 'Assault/Violence'
+
+    # Weapons
+    elif any(word in charge_desc for word in ['WEAPON', 'FIREARM', 'GUN', 'AMMUNITION', 
+        'CONCEALED DIRK', 'METAL KNUCKLES', 'LEADED CANE', 'SWITCHBLADE', 'LRG CAP MAG']):
+        return 'Weapons'
+        
+    # Identity theft / fraud
+    elif any(word in charge_desc for word in ['PERSONAL ID INFO', "OTHER'S ID", 'PERSONAL IDENTIFYING INFO', 
+        'INSURANCE ENTITLEMENT', 'PERSONATE', 'FORGERY', 'MONEY LAUNDERING', 'ACCESS CARD', 'DFRD', 'FICTITIOUS CHECK',
+        'OBTAIN CREDIT', 'USE OTHERS ID', 'PERJURY', 'FORGED INSTRUMENT', 'FALSE STATEMENT', 'FORGE', 'FALSE ENTRIES',
+        'DEFRAUD', 'PASS COMPLETED CHECK', 'BAD CHECK', 'BLANK CHECK', 'POSSESS/ETC BAD', 'POSS DL/ID', 'DL/ID', 'ACES CARD']):
+        return 'Fraud/Identity Theft'
+
+    # Disorderly Conduct/Public Order
+    elif any(word in charge_desc for word in ['DISORDERLY CONDUCT:ALCOHOL', 'TRESPASS', 'POSTED PROPERTY', 
+        'LODGE WITHOUT', 'FIGHT/CHALLENGE', 'LOITER', 'TRESP', 'MINOR POSSESS ALCOHOL', 'LIQUOR TO MINOR', 
+        'LOUD/UNREASONABLE NOISE', 'LEWD ACT', 'INDECENT EXPOSURE', 'TOUCH PERSON INTIMATELY',
+        'PIMPING', 'PANDERING', 'PROTECTIVE ORDER', 'VIOL CRT ORD DOM VIOLENCE', 'CONTEMPT OF COURT']):
+        return 'Disorderly Conduct/Public Order'
+
+    # Sex Offense/Registration
+    elif any(word in charge_desc for word in ['SEX OFFENDER', '290', 'LEWD', 'LASCIVIOUS', 'CONTACT MINOR WITH INTENT SEX',
+        'ANNOY/MOLEST', 'OBSCENE MATTER OF MINOR', 'RAPE', 'ARRANGE/GO TO MEETING', 'L&L', 'SEXUAL GRATIFICATION']):
+        return 'Sex Offense/Registration'
+
+    else:
+        return 'Other'
+
+
+def enhancement_rates_by_category(df):
     """
-    Calculate enhancement rates by race for each charge category.
-    
-    Includes standard errors and 95% confidence intervals.
+    Compute enhancement rates by category x race x year x statute
+    Among cases in category X, what fraction had any enhancement alleged?
     """
-    
-    # Group by race and charge category
-    grouped = df.groupby(['race_std', 'charge_category']).agg({
-        'is_enhancement_charge': ['sum', 'count', 'mean']
-    }).reset_index()
-    
-    # Flatten column names
-    grouped.columns = ['Race', 'Charge Category', 'Enhancement Count', 'Total Count', 'Enhancement Rate']
-    
-    # Calculate standard error: SE = sqrt(p * (1-p) / n)
-    grouped['Standard Error'] = np.sqrt(
-        (grouped['Enhancement Rate'] * (1 - grouped['Enhancement Rate'])) / grouped['Total Count']
-    )
-    
-    # Calculate 95% confidence interval (±1.96 * SE)
-    grouped['CI Lower'] = grouped['Enhancement Rate'] - 1.96 * grouped['Standard Error']
-    grouped['CI Upper'] = grouped['Enhancement Rate'] + 1.96 * grouped['Standard Error']
-    
-    # Ensure CI bounds are valid
-    grouped['CI Lower'] = grouped['CI Lower'].clip(lower=0)
-    grouped['CI Upper'] = grouped['CI Upper'].clip(upper=1)
-    
-    return grouped
+    # Cases are assigned to their modal (most common) substantive charge category
+    case_level = (df
+                .groupby(['source_case_id', 'race_std', 'Year'])
+                .agg(
+                    any_enhancement=('any_enhancement_in_case', 'max'),
+                    # define a case "primary" category/statute for stratification
+                    charge_category=('charge_category', lambda x: x.value_counts().index[0]),
+                    statute_level=('statute_level', lambda x: x.value_counts().index[0])
+                )
+                .reset_index()
+                )
+
+    g = (case_level.groupby(['charge_category', 'race_std', 'Year', 'statute_level'])
+        .agg(Enhanced=('any_enhancement','sum'),
+            N=('any_enhancement','size'))
+        .reset_index())
+
+    g['Enhancement Rate'] = g['Enhanced'] / g['N']
+
+    # SE + 95% CI (Wald). For small N, consider Wilson instead.
+    g['SE'] = np.sqrt(g['Enhancement Rate'] * (1 - g['Enhancement Rate']) / g['N'])
+    g['CI Lower'] = np.maximum(0, g['Enhancement Rate'] - 1.96 * g['SE'])
+    g['CI Upper'] = np.minimum(1, g['Enhancement Rate'] + 1.96 * g['SE'])
+    return g

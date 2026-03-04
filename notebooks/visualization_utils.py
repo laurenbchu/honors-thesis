@@ -67,6 +67,8 @@ STOP_TYPE_COLOR_MAP = {
 
 RACE_ORDER = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
 
+TABLE_RACE_ORDER = ["Black/African American", "Hispanic/Latino", "White", "Asian", "Other"]
+
 def _binom_ci(enhanced, n, z=1.96):
     """
     Normal-approx binomial CI (Wald), clipped to [0,1].
@@ -818,7 +820,7 @@ def plot_enhancement_rate_by_race(enhancement_by_primary):
     ax.set_ylabel('Enhancement Rate (%)', fontsize=12, fontweight='bold')
     ax.set_xlabel('Canonical Race', fontsize=12, fontweight='bold')
     ax.set_title(
-        'Enhancement Charge Rate by Race\n(Overall, with 95% Confidence Intervals)',
+        'Overall Enhancement Charge Rate by Race\n(with 95% Confidence Intervals)',
         fontsize=14,
         fontweight='bold',
         pad=20
@@ -900,7 +902,7 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
         return darkened
     
     # Create figure with two panels
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 10), gridspec_kw={'wspace': 0.3})
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7), gridspec_kw={'wspace': 0.3})
     
     # ---- Panel A: Misdemeanor ----
     races_mis = mis['race_std'].astype(str).to_list()
@@ -936,8 +938,8 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
             )
     
     # Add labels for Misdemeanor panel
-    ax1.set_ylabel('Enhancement Rate (%)', fontsize=12, fontweight='bold')
     ax1.set_xlabel('Canonical Race', fontsize=12, fontweight='bold')
+    ax1.set_ylabel("Enhancement Rate (%)", fontsize=12, fontweight="bold")
     ax1.set_title('(A) Misdemeanor Charges', fontsize=13, fontweight='bold', pad=15)
     ax1.set_xticks(x_mis)
     ax1.set_xticklabels(races_mis, rotation=0, ha='center', fontsize=10)
@@ -948,7 +950,7 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
     max_y_mis = 0
     for i, (rate, err, n) in enumerate(zip(mis_rates, mis_errors, mis_n)):
         if np.isfinite(rate):
-            y_pos = rate + err + 1
+            y_pos = rate + err + 0.3
             ax1.text(
                 i, y_pos,
                 f'{rate:.1f}%\n(n={int(n):,})',
@@ -957,7 +959,7 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
                 fontsize=8,
                 fontweight='bold'
             )
-            max_y_mis = max(max_y_mis, y_pos + 5)
+            max_y_mis = max(max_y_mis, y_pos + 2)
     
     ax1.set_ylim(0, min(100, max_y_mis))
     
@@ -995,7 +997,6 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
             )
     
     # Add labels for Felony panel
-    ax2.set_ylabel('Enhancement Rate (%)', fontsize=12, fontweight='bold')
     ax2.set_xlabel('Canonical Race', fontsize=12, fontweight='bold')
     ax2.set_title('(B) Felony Charges', fontsize=13, fontweight='bold', pad=15)
     ax2.set_xticks(x_fel)
@@ -1007,7 +1008,7 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
     max_y_fel = 0
     for i, (rate, err, n) in enumerate(zip(fel_rates, fel_errors, fel_n)):
         if np.isfinite(rate):
-            y_pos = rate + err + 1
+            y_pos = rate + err + 0.3
             ax2.text(
                 i, y_pos,
                 f'{rate:.1f}%\n(n={int(n):,})',
@@ -1016,7 +1017,7 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
                 fontsize=8,
                 fontweight='bold'
             )
-            max_y_fel = max(max_y_fel, y_pos + 5)
+            max_y_fel = max(max_y_fel, y_pos + 2)
     
     ax2.set_ylim(0, min(100, max_y_fel))
     
@@ -1025,18 +1026,19 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
         'Enhancement Charge Rate by Race and Statute Level\n(with 95% Confidence Intervals)',
         fontsize=15,
         fontweight='bold',
-        y=1.00
+        y=1.03
+    )
+
+    fig.text(
+    0.505, 0.52, 'Enhancement Rate (%)',
+    ha='center',
+    va='center',
+    rotation='vertical',
+    fontsize=12,
+    fontweight='bold'
     )
     
-    # Add centered legend below the plots
-    handles = [plt.Rectangle((0,0),1,1, color=COLOR_MAP[race], alpha=0.85) for race in RACE_ORDER if race in races_mis or race in races_fel]
-    labels = [race for race in RACE_ORDER if race in races_mis or race in races_fel]
-    fig.legend(handles, labels, title="Canonical Race", 
-              fontsize=10, title_fontsize=11,
-              frameon=True, fancybox=True, shadow=False,
-              loc='upper center', bbox_to_anchor=(0.5, 0.05), ncol=4)
-    
-    fig.subplots_adjust(left=0.08, right=0.95, top=0.95, bottom=0.15, wspace=0.3)
+    fig.subplots_adjust(left=0.08, right=0.95, top=0.90, bottom=0.10, wspace=0.3)
     return fig
 
 
@@ -1116,7 +1118,7 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
         colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
 
         # Figure
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 10), gridspec_kw={"wspace": 0.3})
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8), gridspec_kw={"wspace": 0.3})
 
         # ---- Panel A: Misdemeanor ----
         ax1.bar(x, np.nan_to_num(mis_rates, nan=0.0), color=colors, alpha=0.85, edgecolor="none", linewidth=0)
@@ -1127,8 +1129,8 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
                              alpha=0.4, capsize=5, capthick=1.5, linewidth=1.5)
 
         ax1.set_title("(A) Misdemeanor Charges", fontsize=13, fontweight="bold", pad=15)
-        ax1.set_ylabel("Enhancement Rate (%)", fontsize=12, fontweight="bold")
         ax1.set_xlabel("Canonical Race", fontsize=12, fontweight="bold")
+        ax1.set_ylabel("Enhancement Rate (%)", fontsize=12, fontweight="bold")
         ax1.set_xticks(x)
         ax1.set_xticklabels(races, rotation=0, ha="center", fontsize=10)
         ax1.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
@@ -1137,11 +1139,14 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
         max_y_mis = 0
         for i, (rate, err, n) in enumerate(zip(mis_rates, mis_errs, mis_n)):
             if np.isfinite(rate) and n > 0:
-                y_pos = rate + err + 1
+                y_pos = rate + err + 0.3
                 ax1.text(i, y_pos, f"{rate:.1f}%\n(n={int(n):,})",
                          ha="center", va="bottom", fontsize=8, fontweight="bold")
-                max_y_mis = max(max_y_mis, y_pos + 5)
-        ax1.set_ylim(0, min(100, max_y_mis if max_y_mis > 0 else 100))
+                max_y_mis = max(max_y_mis, y_pos + 2)
+        # add a little headroom so text doesn't touch the top spine
+        pad = 2  # percentage points; tweak to taste (e.g., 1.5–3)
+        ymax_mis = max_y_mis if max_y_mis > 0 else 100
+        ax1.set_ylim(0, min(100, ymax_mis + pad))
 
         # ---- Panel B: Felony ----
         ax2.bar(x, np.nan_to_num(fel_rates, nan=0.0), color=colors, alpha=0.85, edgecolor="none", linewidth=0)
@@ -1152,7 +1157,6 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
                              alpha=0.4, capsize=5, capthick=1.5, linewidth=1.5)
 
         ax2.set_title("(B) Felony Charges", fontsize=13, fontweight="bold", pad=15)
-        ax2.set_ylabel("Enhancement Rate (%)", fontsize=12, fontweight="bold")
         ax2.set_xlabel("Canonical Race", fontsize=12, fontweight="bold")
         ax2.set_xticks(x)
         ax2.set_xticklabels(races, rotation=0, ha="center", fontsize=10)
@@ -1162,33 +1166,21 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
         max_y_fel = 0
         for i, (rate, err, n) in enumerate(zip(fel_rates, fel_errs, fel_n)):
             if np.isfinite(rate) and n > 0:
-                y_pos = rate + err + 1
+                y_pos = rate + err + 0.3
                 ax2.text(i, y_pos, f"{rate:.1f}%\n(n={int(n):,})",
                          ha="center", va="bottom", fontsize=8, fontweight="bold")
-                max_y_fel = max(max_y_fel, y_pos + 5)
-        ax2.set_ylim(0, min(100, max_y_fel if max_y_fel > 0 else 100))
-
+                max_y_fel = max(max_y_fel, y_pos + 2)
+            ymax_fel = max_y_fel if max_y_fel > 0 else 100
+            ax2.set_ylim(0, min(100, ymax_fel + pad))
         # Suptitle
         fig.suptitle(
-            f"Enhancement Charge Rate by Race and Statute Level: {category}\n(with 95% Confidence Intervals)",
+            f"{category} Enhancement Charge Rate by Race and Statute Level\n(with 95% Confidence Intervals)",
             fontsize=15,
             fontweight="bold",
-            y=0.995
+            y=1.03
         )
 
-        # Legend (race) centered below
-        handles = [
-            plt.Rectangle((0, 0), 1, 1, color=COLOR_MAP[r], alpha=0.85)
-            for r in races
-        ]
-        fig.legend(
-            handles, races, title="Canonical Race",
-            fontsize=10, title_fontsize=11,
-            frameon=True, fancybox=True, shadow=False,
-            loc="upper center", bbox_to_anchor=(0.5, 0.05), ncol=min(4, len(races))
-        )
-
-        fig.subplots_adjust(left=0.08, right=0.95, top=0.90, bottom=0.17, wspace=0.3)
+        fig.subplots_adjust(left=0.08, right=0.95, top=0.88, bottom=0.17, wspace=0.3)
 
         figs[category] = fig
 
@@ -1199,6 +1191,136 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
 # Prosecution: Wobbler Felony Rates
 # ------------------------------------------------------------------
 
+def wobbler_felony_rate_tables(df):
+    """
+    Generate two tables for wobbler charges:
+      1) Overall felony filing rates for wobblers by race
+      2) Felony filing rates for wobblers by charge category and race
+
+    Returns
+    -------
+    tuple (wobbler_table, wobbler_category_table)
+    """
+
+    import numpy as np
+    import pandas as pd
+
+    # Filter to wobbler charges only
+    wobblers = df[df['is_wobbler']].copy()
+
+    # -----------------------------
+    # TABLE 1: Overall by race
+    # -----------------------------
+    wobbler_summary = (
+        wobblers
+        .groupby(['race_std', 'statute_level'])
+        .size()
+        .unstack(fill_value=0)
+    )
+
+    # Ensure both columns exist
+    for col in ['Felony', 'Misdemeanor']:
+        if col not in wobbler_summary.columns:
+            wobbler_summary[col] = 0
+
+    wobbler_summary['Total'] = wobbler_summary['Felony'] + wobbler_summary['Misdemeanor']
+    wobbler_summary['Felony Rate'] = wobbler_summary['Felony'] / wobbler_summary['Total']
+
+    wobbler_summary['Felony Rate SE'] = np.sqrt(
+        wobbler_summary['Felony Rate'] *
+        (1 - wobbler_summary['Felony Rate']) /
+        wobbler_summary['Total']
+    )
+
+    wobbler_summary.index.name = 'Canonical Race'
+
+    wobbler_table = wobbler_summary[['Felony', 'Misdemeanor', 'Total', 'Felony Rate', 'Felony Rate SE']].copy()
+
+    wobbler_table['Felony Rate (%)'] = wobbler_table.apply(
+        lambda row: f"{row['Felony Rate']*100:.1f} (±{row['Felony Rate SE']*100*1.96:.1f})",
+        axis=1
+    )
+
+    wobbler_table = wobbler_table[['Total', 'Felony', 'Misdemeanor', 'Felony Rate (%)']]
+    wobbler_table.columns = [
+        'Total Wobblers',
+        'Filed as Felony',
+        'Filed as Misdemeanor',
+        'Felony Rate (%) [95% CI]'
+    ]
+
+    # Enforce race order
+    wobbler_table = wobbler_table.reindex(TABLE_RACE_ORDER)
+
+    # -----------------------------
+    # TABLE 2: By charge category
+    # -----------------------------
+    wobbler_by_category = (
+        wobblers
+        .groupby(['charge_category', 'race_std', 'statute_level'])
+        .size()
+        .unstack(fill_value=0)
+    )
+
+    for col in ['Felony', 'Misdemeanor']:
+        if col not in wobbler_by_category.columns:
+            wobbler_by_category[col] = 0
+
+    wobbler_by_category['Total'] = (
+        wobbler_by_category['Felony'] +
+        wobbler_by_category['Misdemeanor']
+    )
+
+    wobbler_by_category['Felony Rate'] = (
+        wobbler_by_category['Felony'] /
+        wobbler_by_category['Total']
+    )
+
+    wobbler_by_category['Felony Rate SE'] = np.sqrt(
+        wobbler_by_category['Felony Rate'] *
+        (1 - wobbler_by_category['Felony Rate']) /
+        wobbler_by_category['Total']
+    )
+
+    wobbler_category_table = wobbler_by_category.reset_index()
+
+    wobbler_category_table['Felony Rate (%)'] = wobbler_category_table.apply(
+        lambda row: f"{row['Felony Rate']*100:.1f} (±{row['Felony Rate SE']*100*1.96:.1f})",
+        axis=1
+    )
+
+    wobbler_category_table = wobbler_category_table[[
+        'charge_category', 'race_std', 'Total', 'Felony', 'Misdemeanor', 'Felony Rate (%)'
+    ]]
+
+    wobbler_category_table.columns = [
+        'Charge Category',
+        'Canonical Race',
+        'Total Wobblers',
+        'Filed as Felony',
+        'Filed as Misdemeanor',
+        'Felony Rate (%) [95% CI]'
+    ]
+
+    # Enforce race order within each category
+    wobbler_category_table['Canonical Race'] = pd.Categorical(
+        wobbler_category_table['Canonical Race'],
+        categories=RACE_ORDER,
+        ordered=True
+    )
+
+    wobbler_category_table = wobbler_category_table.sort_values(
+    ['Charge Category', 'Canonical Race']
+    )
+
+    # Set hierarchical index so category appears once per group
+    wobbler_category_table = wobbler_category_table.set_index(
+        ['Charge Category', 'Canonical Race']
+    )
+
+    return wobbler_table, wobbler_category_table
+
+
 def plot_wobbler_felony_rates(wobbler_summary):
     """
     Bar chart showing felony filing rates for wobbler charges by race with 95% CI.
@@ -1208,6 +1330,9 @@ def plot_wobbler_felony_rates(wobbler_summary):
     # Ensure index is a column for easier processing
     if df.index.name == 'Canonical Race':
         df = df.reset_index()
+
+    # Remove "Other"
+    df = df[df['Canonical Race'] != 'Other']
     
     # Apply race ordering
     df['Canonical Race'] = pd.Categorical(df['Canonical Race'], categories=RACE_ORDER, ordered=True)

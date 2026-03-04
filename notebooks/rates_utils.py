@@ -1,6 +1,10 @@
 import numpy as np
 import pandas as pd
 
+# --------------------------------------------------------------------------
+# Population functions
+# --------------------------------------------------------------------------
+
 def load_census(county_fips):
     """
     Load and relabel Decennial Census PL Table P2 data for a given county.
@@ -99,6 +103,9 @@ def census_rollup(census_relabeled):
         ),
     })
 
+# --------------------------------------------------------------------------
+# Policing functions
+# --------------------------------------------------------------------------
 
 def policing_rates(df, census):
     """
@@ -176,20 +183,22 @@ def policing_rates(df, census):
     return summary
 
 
-def policing_rates_mixed(df, census):
+def policing_rates_sensitivity(df, census, sensitivity_type):
     """
-    Build a race × year policing summary table for discretionary stops,
-    treating mixed search bases as discretionary (sensitivity analysis).
+    Build a race × year policing summary table for sensitivity analysis.
     
     Includes standard errors for rates and per-capita metrics.
     """
 
+    search_col = f"disc_search_{sensitivity_type}"
+    hit_col = f"disc_hit_{sensitivity_type}"
+
     g = df.groupby(["year", "race_std"])
 
     summary = g.agg(
-        Stop_Count=("disc_search_mixed", "size"),
-        Search_Count=("disc_search_mixed", "sum"),
-        Hit_Count=("disc_hit_mixed", "sum"),
+        Stop_Count=(search_col, "size"),
+        Search_Count=(search_col, "sum"),
+        Hit_Count=(hit_col, "sum"),
     ).reset_index()
 
     # Rename columns
@@ -247,6 +256,10 @@ def policing_rates_mixed(df, census):
 
     return summary
 
+
+# --------------------------------------------------------------------------
+# Prosecution functions
+# --------------------------------------------------------------------------
 
 def categorize_charge(charge_desc):
     """

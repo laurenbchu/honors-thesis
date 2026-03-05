@@ -117,22 +117,6 @@ def _prep_df(df, primary_statute_level=None):
 def export_figures_to_pdf(figs_dict, output_dir='../output'):
     """
     Export all figures to PDF format for high-quality inclusion in Overleaf/LaTeX documents.
-    
-    Parameters:
-    -----------
-    figs_dict : dict
-        Dictionary of figures from visualize_policing() or visualize_prosecution()
-        Keys are figure names, values are matplotlib figure objects
-    output_dir : str
-        Directory to save PDF files (default: '../output')
-    
-    Example:
-    --------
-    policing_figs = visualize_policing(policing_analysis)
-    export_figures_to_pdf(policing_figs)
-    
-    prosecution_figs = visualize_prosecution(prosecution_analysis)
-    export_figures_to_pdf(prosecution_figs)
     """
     os.makedirs(output_dir, exist_ok=True)
     
@@ -393,18 +377,6 @@ def visualize_policing(policing_analysis):
 def create_sensitivity_visualization(strict_df, mixed_df, strict_name, mixed_name, title_ending):
     """
     Create publication-ready side-by-side comparison of strict vs. mixed search classifications.
-    
-    Parameters
-    ----------
-    strict_df : pandas.DataFrame
-        Policing analysis with strict discretionary classification
-    mixed_df : pandas.DataFrame
-        Policing analysis with mixed discretionary classification
-        
-    Returns
-    -------
-    matplotlib.figure.Figure
-        Publication-ready comparison figure
     """
 
     # Filter to most recent year automatically
@@ -596,7 +568,6 @@ def create_sensitivity_visualization(strict_df, mixed_df, strict_name, mixed_nam
 def enhancement_rate_race_table(enhancement_by_primary):
     """
     Overall enhancement rates by race (aggregating across all statute levels and charge categories).
-    Returns a simple table with columns: Canonical Race, Number of Cases, Enhancement Rate (%).
     """
     summary = (
         enhancement_by_primary
@@ -631,7 +602,6 @@ def enhancement_rate_race_table(enhancement_by_primary):
 def enhancement_rate_race_statute_table(enhancement_by_primary):
     """
     Enhancement rates by race, stratified by statute level.
-    Returns a long-format table with columns: Canonical Race, Statute Level, Number of Cases, Enhancement Rate (%).
     """
     summary = (
         enhancement_by_primary
@@ -674,14 +644,6 @@ def enhancement_rate_race_statute_table(enhancement_by_primary):
 def enhancement_rate_race_statute_category_table(enhancement_by_primary, top_categories=None):
     """
     Enhancement rates by race, stratified by both statute level AND charge category.
-    Returns a long-format table with columns: Charge Category, Canonical Race, Statute Level, Number of Cases, Enhancement Rate (%).
-    
-    Parameters
-    ----------
-    enhancement_by_primary : pd.DataFrame
-        Enhancement data with columns: race_std, primary_statute_level, primary_charge_category, Enhanced, N
-    top_categories : list, optional
-        List of charge categories to include. If None, includes all categories.
     """
     df = enhancement_by_primary.copy()
     
@@ -741,17 +703,7 @@ def enhancement_rate_race_statute_category_table(enhancement_by_primary, top_cat
 
 def plot_enhancement_rate_by_race(enhancement_by_primary):
     """
-    Plot 1: Overall enhancement rates by race (aggregated across all statute levels and categories).
-    
-    Parameters
-    ----------
-    enhancement_by_primary : pd.DataFrame
-        Enhancement data with columns: race_std, Enhanced, N
-        
-    Returns
-    -------
-    matplotlib.figure.Figure
-        Bar chart showing enhancement rates by race with 95% CI
+    Overall enhancement rates by race (aggregated across all statute levels and categories).
     """
     # Aggregate across all statute levels and categories
     summary = (
@@ -859,18 +811,8 @@ def plot_enhancement_rate_by_race(enhancement_by_primary):
 
 def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
     """
-    Plot 2: Enhancement rates by race, stratified by statute level (Felony vs Misdemeanor).
+    Enhancement rates by race, stratified by statute level (Felony vs Misdemeanor).
     Creates side-by-side panels with one for Misdemeanor and one for Felony, colored by race.
-    
-    Parameters
-    ----------
-    enhancement_by_primary : pd.DataFrame
-        Enhancement data with columns: race_std, primary_statute_level, Enhanced, N
-        
-    Returns
-    -------
-    matplotlib.figure.Figure
-        Two-panel bar chart showing enhancement rates by race for each statute level with 95% CI
     """
     # Aggregate by race and statute level
     summary = (
@@ -1047,11 +989,6 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
     For each charge category, create a 2-panel figure:
       (A) Misdemeanor charges (left) and (B) Felony charges (right),
     with bars colored by race (COLOR_MAP) and 95% CI error bars.
-
-    Returns
-    -------
-    dict
-        {category_name: matplotlib.figure.Figure}
     """
     import numpy as np
     import matplotlib.pyplot as plt
@@ -1196,10 +1133,6 @@ def wobbler_felony_rate_tables(df):
     Generate two tables for wobbler charges:
       1) Overall felony filing rates for wobblers by race
       2) Felony filing rates for wobblers by charge category and race
-
-    Returns
-    -------
-    tuple (wobbler_table, wobbler_category_table)
     """
 
     import numpy as np
@@ -1305,7 +1238,7 @@ def wobbler_felony_rate_tables(df):
     # Enforce race order within each category
     wobbler_category_table['Canonical Race'] = pd.Categorical(
         wobbler_category_table['Canonical Race'],
-        categories=RACE_ORDER,
+        categories=TABLE_RACE_ORDER,
         ordered=True
     )
 
@@ -1321,110 +1254,330 @@ def wobbler_felony_rate_tables(df):
     return wobbler_table, wobbler_category_table
 
 
-def plot_wobbler_felony_rates(wobbler_summary):
-    """
-    Bar chart showing felony filing rates for wobbler charges by race with 95% CI.
-    """
-    df = wobbler_summary.copy()
-    
-    # Ensure index is a column for easier processing
-    if df.index.name == 'Canonical Race':
-        df = df.reset_index()
+def wobbler_felony_rate_by_category(df):
+    # Filter to wobbler charges only
+    wobblers = df[df["is_wobbler"]].copy()
 
-    # Remove "Other"
-    df = df[df['Canonical Race'] != 'Other']
-    
-    # Apply race ordering
-    df['Canonical Race'] = pd.Categorical(df['Canonical Race'], categories=RACE_ORDER, ordered=True)
-    df = df.sort_values('Canonical Race')
-    
-    # Extract data
-    races = df['Canonical Race'].astype(str).to_list()
-    felony_rates = df['Felony Rate'].to_numpy()
-    se = df['Felony Rate SE'].to_numpy()
-    totals = df['Total'].to_numpy()
-    
-    # Convert to percentage
-    felony_rates = felony_rates * 100
-    se = se * 100
-    
-    # Calculate 95% CI
-    errors = se * Z
-    
-    # Helper function to darken a color
-    def darken_color(color, factor=0.7):
-        """Darken a hex color by multiplying RGB values by factor"""
-        import matplotlib.colors as mcolors
+    # Aggregate by charge category and statute level (across all races)
+    category_summary = (
+        wobblers
+        .groupby(["charge_category", "statute_level"])
+        .size()
+        .unstack(fill_value=0)
+    )
+
+    # Ensure both statute level columns exist
+    for col in ["Felony", "Misdemeanor"]:
+        if col not in category_summary.columns:
+            category_summary[col] = 0
+
+    # Totals
+    category_summary["Total"] = category_summary["Felony"] + category_summary["Misdemeanor"]
+
+    # Remove categories with < 500 wobblers AND remove "Other"
+    category_summary = category_summary[
+        (category_summary["Total"] >= 500) &
+        (category_summary.index != "Other")
+    ].copy()
+
+    # Felony rate (MUST exist before SE)
+    category_summary["Felony Rate"] = np.where(
+        category_summary["Total"] > 0,
+        category_summary["Felony"] / category_summary["Total"],
+        np.nan
+    )
+
+    # Remove categories with felony rate under 50%
+    category_summary = category_summary[category_summary["Felony Rate"] >= 0.50]
+
+    # Standard error for 95% CI
+    category_summary["Felony Rate SE"] = np.sqrt(
+        category_summary["Felony Rate"] *
+        (1 - category_summary["Felony Rate"]) /
+        category_summary["Total"]
+    )
+
+    # Sort by felony rate (descending)
+    category_summary = category_summary.sort_values("Felony Rate", ascending=False)
+
+    # Format output
+    category_summary["Felony Rate (%)"] = category_summary.apply(
+        lambda row: f"{row['Felony Rate']*100:.1f} (±{row['Felony Rate SE']*100*1.96:.1f})",
+        axis=1
+    )
+
+    result = category_summary[["Total", "Felony", "Misdemeanor", "Felony Rate (%)"]].copy()
+    result.columns = [
+        "Total Wobblers",
+        "Filed as Felony",
+        "Filed as Misdemeanor",
+        "Felony Rate (%) [95% CI]"
+    ]
+    result.index.name = "Charge Category"
+    return result
+
+
+def plot_wobbler_overall_felony_rate(df):
+    """
+    Overall wobbler felony filing rate by race (95% CI).
+    """
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+
+    Z_ = globals().get("Z", 1.96)
+
+    # Build table (same logic as your table function)
+    wobblers = df[df["is_wobbler"]].copy()
+    summary = (
+        wobblers.groupby(["race_std", "statute_level"])
+        .size()
+        .unstack(fill_value=0)
+    )
+    for col in ["Felony", "Misdemeanor"]:
+        if col not in summary.columns:
+            summary[col] = 0
+
+    summary["Total"] = summary["Felony"] + summary["Misdemeanor"]
+    summary["Felony Rate"] = np.where(summary["Total"] > 0, summary["Felony"] / summary["Total"], np.nan)
+    summary["Felony Rate SE"] = np.where(
+        summary["Total"] > 0,
+        np.sqrt(summary["Felony Rate"] * (1 - summary["Felony Rate"]) / summary["Total"]),
+        np.nan,
+    )
+
+    # Enforce race order and drop races not present (optional)
+    summary = summary.reindex(RACE_ORDER)
+
+    races = summary.index.astype(str).tolist()
+    rates = (summary["Felony Rate"].to_numpy(dtype=float) * 100)
+    ses   = (summary["Felony Rate SE"].to_numpy(dtype=float) * 100)
+    ns    = summary["Total"].to_numpy(dtype=float)
+    errs  = ses * Z_
+
+    def darken(color, factor=0.7):
         rgb = mcolors.to_rgb(color)
-        darkened = tuple(c * factor for c in rgb)
-        return darkened
-    
-    # Create figure
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
+        return tuple(c * factor for c in rgb)
+
+    colors = [globals().get("COLOR_MAP", {}).get(r, "#7f7f7f") for r in races]
     x = np.arange(len(races))
-    colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
-    
-    # Create bars without outline
-    ax.bar(
-        x, felony_rates,
-        color=colors,
-        alpha=0.85,
-        edgecolor='none',
-        linewidth=0
-    )
-    
-    # Add error bars matching bar color
-    for i, (rate, err, color) in enumerate(zip(felony_rates, errors, colors)):
-        if np.isfinite(rate):
-            ax.errorbar(
-                i, rate,
-                yerr=err,
-                fmt='none',
-                ecolor=darken_color(color),
-                alpha=0.4,
-                capsize=5,
-                capthick=1.5,
-                linewidth=1.5
-            )
-    
-    # Set labels and title
-    ylabel = 'Wobbler Charged as Felony (%)'
-    ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
-    ax.set_xlabel('Canonical Race', fontsize=12, fontweight='bold')
-    ax.set_title(
-        'Wobbler Charges: Felony Filing Rate by Race\n(with 95% Confidence Intervals)',
-        fontsize=14,
-        fontweight='bold',
-        pad=20
-    )
-    
-    # Set x-axis
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(x, np.nan_to_num(rates, nan=0.0), color=colors, alpha=0.85, edgecolor="none", linewidth=0)
+
+    for i, (rate, err, col, n) in enumerate(zip(rates, errs, colors, ns)):
+        if np.isfinite(rate) and n > 0:
+            ax.errorbar(i, rate, yerr=err, fmt="none", ecolor=darken(col),
+                        alpha=0.4, capsize=5, capthick=1.5, linewidth=1.5)
+
+    ax.set_title("Wobbler Charges: Felony Filing Rate by Race\n(with 95% Confidence Intervals)",
+                 fontsize=14, fontweight="bold", pad=15)
+    ax.set_xlabel("Canonical Race", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Wobbler Charged as Felony (%)", fontsize=12, fontweight="bold")
     ax.set_xticks(x)
-    ax.set_xticklabels(races, rotation=0, ha='center', fontsize=10)
-    
-    # Add grid
-    ax.grid(axis='y', alpha=0.3, linestyle=':', linewidth=0.5)
+    ax.set_xticklabels(races, fontsize=10)
+    ax.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
     ax.set_axisbelow(True)
-    
-    # Add sample sizes as text above bars
-    for i, (rate, err, total) in enumerate(zip(felony_rates, errors, totals)):
-        if np.isfinite(rate):
-            ax.text(
-                i, rate + err + 2,
-                f'n={int(total):,}',
-                ha='center',
-                va='bottom',
-                fontsize=8,
-                fontweight='bold'
-            )
-    
-    # Set y-axis limits to prevent label clipping
-    ymax = np.nanmax(felony_rates + errors)
-    if np.isfinite(ymax):
-        ax.set_ylim(0, min(100, ymax * 1.15))
-    else:
-        ax.set_ylim(0, 100)
-    
+
+    # bar labels (rate + n), with a little headroom
+    max_y = 0
+    for i, (rate, err, n) in enumerate(zip(rates, errs, ns)):
+        if np.isfinite(rate) and n > 0:
+            y_pos = rate + err + 0.7
+            ax.text(i, y_pos, f"{rate:.1f}%\n(n={int(n):,})",
+                    ha="center", va="bottom", fontsize=8, fontweight="bold")
+            max_y = max(max_y, y_pos + 2)
+
+    pad = 2  # extra space above the highest label (percentage points)
+
+    ymax = max_y if max_y > 0 else 100
+    ax.set_ylim(0, min(100, ymax + pad))
     fig.tight_layout()
+    return fig
+
+
+def plot_wobbler_cleveland_dot(df, top_categories=None, sort_by="rate_overall"):
+    """
+    Cleveland dot plot for wobbler felony filing rate by charge category and race.
+    - y: charge category
+    - x: felony filing rate (%)
+    - points colored by race; horizontal 95% CI whiskers
+    - races are "within category" via small vertical offsets (dodged)
+    """
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    Z_ = globals().get("Z", 1.96)
+    races = list(globals().get("RACE_ORDER", ["Black/African American", "Hispanic/Latino", "White", "Asian"]))
+    color_map = globals().get("COLOR_MAP", {})
+
+    # Filter to wobblers
+    wobblers = df[df["is_wobbler"]].copy()
+
+    # Aggregate counts by category x race x statute
+    g = (
+        wobblers.groupby(["charge_category", "race_std", "statute_level"])
+        .size()
+        .unstack(fill_value=0)
+        .reset_index()
+    )
+
+    # Ensure statute columns exist
+    for col in ["Felony", "Misdemeanor"]:
+        if col not in g.columns:
+            g[col] = 0
+
+    g["Total"] = g["Felony"] + g["Misdemeanor"]
+    g["Felony Rate"] = np.where(g["Total"] > 0, g["Felony"] / g["Total"], np.nan)
+    g["SE"] = np.where(
+        g["Total"] > 0,
+        np.sqrt(g["Felony Rate"] * (1 - g["Felony Rate"]) / g["Total"]),
+        np.nan,
+    )
+    g["lo"] = (g["Felony Rate"] - Z_ * g["SE"]) * 100
+    g["hi"] = (g["Felony Rate"] + Z_ * g["SE"]) * 100
+    g["x"] = g["Felony Rate"] * 100
+
+    # Keep only races of interest, enforce order
+    g = g[g["race_std"].isin(races)].copy()
+    g["race_std"] = pd.Categorical(g["race_std"], categories=races, ordered=True)
+
+    # Filter to categories with over 500 cases total
+    cat_totals = g.groupby("charge_category")["Total"].sum()
+    categories_over_500 = cat_totals[cat_totals > 500].index
+    g = g[g["charge_category"].isin(categories_over_500)].copy()
+    
+    # Recalculate category totals after filtering
+    cat_totals = g.groupby("charge_category")["Total"].sum().sort_values(ascending=False)
+
+    overall_rate = g.groupby("charge_category")[["Felony", "Misdemeanor"]].sum()
+    overall_rate["Total"] = overall_rate["Felony"] + overall_rate["Misdemeanor"]
+    overall_rate["Rate"] = np.where(overall_rate["Total"] > 0, overall_rate["Felony"] / overall_rate["Total"], np.nan)
+
+    # Choose which categories to plot (and in what order)
+    if top_categories is not None:
+        # Allow: list/tuple/Index/Series of category names
+        categories = list(top_categories)
+
+        # Keep only categories that actually exist after your filters
+        existing = set(g["charge_category"].unique())
+        categories = [c for c in categories if c in existing]
+    else:
+        # Fall back to automatic ordering logic
+        if sort_by == "total":
+            order = cat_totals.index.tolist()
+        elif sort_by == "rate_overall":
+            order = overall_rate["Rate"].sort_values(ascending=False).index.tolist()
+        elif sort_by == "rate_black":
+            blk = g[g["race_std"] == races[0]].set_index("charge_category")["Felony Rate"]
+            order = blk.sort_values(ascending=False).index.tolist()
+        else:  # "alpha" or fallback
+            order = sorted(cat_totals.index.tolist())
+
+        categories = order
+
+    g = g[g["charge_category"].isin(categories)].copy()
+
+    # Prepare y positions (one row per category) + dodges for race
+    categories = list(categories)
+    y_base = np.arange(len(categories))
+
+    # small symmetric offsets so races sit "within category"
+    offsets = np.linspace(-0.32, 0.32, num=len(races))
+
+    # Figure sizing
+    fig_h = max(6, 0.35 * len(categories) + 2)
+    fig, ax = plt.subplots(figsize=(12, fig_h))
+
+    # Light reference grid
+    ax.grid(axis="x", alpha=0.15)
+    ax.set_axisbelow(True)
+    ax.axvline(50, linestyle="--", color="gray", alpha=0.4, linewidth=1)
+
+    # Alternating background bands for each category row
+    for i, y0 in enumerate(y_base):
+        if i % 2 == 0:
+            ax.axhspan(y0 - 0.5, y0 + 0.5, color="0.95", alpha=1.0, zorder=0)
+
+    # Plot each race as a series
+    for r_i, race in enumerate(races):
+        sub = g[g["race_std"] == race].copy()
+        # align to category list
+        sub = sub.set_index("charge_category").reindex(categories)
+        y = y_base + offsets[r_i]
+
+        x = sub["x"].to_numpy(dtype=float)
+        lo = sub["lo"].to_numpy(dtype=float)
+        hi = sub["hi"].to_numpy(dtype=float)
+        n = sub["Total"].to_numpy(dtype=float)
+
+        # CI whiskers
+        for yi, xi, l, h, nn in zip(y, x, lo, hi, n):
+            if np.isfinite(xi) and nn > 0 and np.isfinite(l) and np.isfinite(h):
+                ax.hlines(yi, l, h, linewidth=1.2, alpha=0.18, color=color_map.get(race, "#7f7f7f"), zorder=2)
+
+        # points
+        if race == "White":
+            ax.scatter(
+                x, y,
+                s=95,
+                label=race,
+                facecolors="none",                       # hollow fill
+                edgecolors=color_map.get(race, "#7f7f7f"),# colored outline
+                linewidths=1.6,
+                alpha=0.95,
+                zorder=3,
+            )
+        else:
+            ax.scatter(
+                x, y,
+                s=95,
+                label=race,
+                color=color_map.get(race, "#7f7f7f"),
+                edgecolors="none",
+                alpha=0.95,
+                zorder=3,
+            )
+
+    # Adds category guide lines
+    for y in y_base:
+        ax.axhline(y, color="lightgray", linewidth=0.5, alpha=0.3)
+    
+    # Y axis labels (category once)
+    ax.set_yticks(y_base)
+    ax.set_yticklabels(categories, fontsize=11)
+    ax.invert_yaxis()  # common Cleveland style: top category first
+
+    # X axis
+    ax.set_xlabel("Wobbler Charged as Felony (%)", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Charge Category", fontsize=12, fontweight="bold")
+    ax.set_title(
+        "Felony Charging Rate for Wobbler Charges by Race and Charge Category",
+        fontsize=14,
+        fontweight="bold",
+        pad=12,
+    )
+
+    # Keep bounds sane
+    xmin = np.nanmin(g["lo"].to_numpy(dtype=float))
+    xmax = np.nanmax(g["hi"].to_numpy(dtype=float))
+    if np.isfinite(xmin) and np.isfinite(xmax):
+        ax.set_xlim(max(0, xmin - 2), min(100, xmax + 2))
+    else:
+        ax.set_xlim(0, 100)
+
+    # Legend
+    ax.legend(
+        title="Canonical Race",
+        frameon=True,
+        fontsize=9,
+        title_fontsize=10,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.12),
+        ncol=4
+    )
+
+    fig.tight_layout(rect=[0, 0.15, 1, 1])
     return fig

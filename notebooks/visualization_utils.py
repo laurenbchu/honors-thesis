@@ -1194,15 +1194,13 @@ def plot_wobbler_cleveland_dot(df, top_categories=None, sort_by="rate_overall"):
 
 
 
-def export_figures_to_pdf(figs_dict, output_dir='../output'):
+def export_figure_to_pdf(fig, fig_name):
     """
-    Export all figures to PDF format for high-quality inclusion in Overleaf/LaTeX documents.
+    Export a single figure to PDF for Overleaf/LaTeX.
     """
-    os.makedirs(output_dir, exist_ok=True)
-    
-    for fig_name, fig in figs_dict.items():
-        output_path = f'{output_dir}/{fig_name}.pdf'
-        fig.savefig(output_path, format='pdf', dpi=300, bbox_inches='tight')
-        print(f"Saved: {output_path}")
-    
-    print(f"\nAll figures exported to {output_dir}/ as PDF files")
+    os.makedirs('../output/figures', exist_ok=True)
+    output_path = f"../output/figures/{fig_name}.pdf"
+    fig.savefig(output_path, format="pdf", dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved: {fig_name}.pdf")

@@ -374,3 +374,5 @@ def wobbler_felony_rate_by_category(df):
     ]
     result.index.name = "Charge Category"
     return result
+
+

@@ -218,3 +218,44 @@ def _binom_ci(enhanced, n, z=1.96):
     lo = np.maximum(0, p - z * se)
     hi = np.minimum(1, p + z * se)
     return p, se, lo, hi
+
+
+
+def get_filtered_wobbler_categories(df):
+    """
+    Return charge categories to keep for wobbler analyses.
+
+    Keeps categories that:
+    - are wobblers,
+    - are not 'Other',
+    - have at least 500 total wobblers across all races,
+    - have an overall felony filing rate of at least 5%.
+    """
+    wobblers = df[df["is_wobbler"]].copy()
+
+    category_stats = (
+        wobblers.groupby(["charge_category", "statute_level"])
+        .size()
+        .unstack(fill_value=0)
+        .reset_index()
+    )
+
+    for col in ["Felony", "Misdemeanor"]:
+        if col not in category_stats.columns:
+            category_stats[col] = 0
+
+    category_stats["Total"] = category_stats["Felony"] + category_stats["Misdemeanor"]
+    category_stats["Felony Rate"] = category_stats["Felony"] / category_stats["Total"]
+
+    keep_categories = (
+        category_stats.loc[
+            (category_stats["charge_category"] != "Other") &
+            (category_stats["Total"] >= 500) &
+            (category_stats["Felony Rate"] >= 0.05),
+            ["charge_category", "Total"]
+        ]
+        .sort_values("Total", ascending=False)["charge_category"]
+        .tolist()
+    )
+
+    return keep_categories

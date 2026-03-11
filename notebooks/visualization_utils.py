@@ -2,6 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from matplotlib.ticker import FuncFormatter
+import matplotlib.colors as mcolors
 
 # ------------------------------------------------------------------
 # Plotting and visualization utilities
@@ -60,6 +62,7 @@ def _prep_df(df, primary_statute_level=None):
 
 
 def visualize_policing(policing_analysis):
+
     df = policing_analysis.copy()
     race_col = "Perceived Race"
     
@@ -71,10 +74,50 @@ def visualize_policing(policing_analysis):
     
     years = sorted(df["Year"].dropna().unique().tolist())
     
-    def _create_figure(y_col, title, ylabel, show_errors=True, show_n=True):
-        """Create a single publication-quality line plot with error bars and sample sizes"""
-        fig, ax = plt.subplots(figsize=(10, 7))
-
+    # Create 2x2 figure
+    fig, axes = plt.subplots(2, 2, figsize=(20, 14), gridspec_kw={'wspace': 0.25, 'hspace': 0.30})
+    axes = axes.flatten()
+    
+    # Define the four panels
+    panels = [
+        {
+            'ax_idx': 0,
+            'y_col': 'Stops per 1,000',
+            'title': '(A) Police Stop Rates\n(per 1,000 residents)',
+            'ylabel': 'Stops per 1,000 Residents',
+            'count_col': 'Stop Count',
+            'is_rate': False
+        },
+        {
+            'ax_idx': 1,
+            'y_col': 'Searches per 1,000',
+            'title': '(B) Searches per Capita\n(per 1,000 residents)',
+            'ylabel': 'Searches per 1,000 Residents',
+            'count_col': 'Search Count',
+            'is_rate': False
+        },
+        {
+            'ax_idx': 2,
+            'y_col': 'Search Rate',
+            'title': '(C) Conditional Search Rate\n(among those stopped)',
+            'ylabel': 'Search Rate',
+            'count_col': 'Search Count',
+            'is_rate': True
+        },
+        {
+            'ax_idx': 3,
+            'y_col': 'Hit Rate',
+            'title': '(D) Contraband Hit Rate\n(contraband found given search)',
+            'ylabel': 'Hit Rate',
+            'count_col': 'Hit Count',
+            'is_rate': True
+        }
+    ]
+    
+    for panel in panels:
+        ax = axes[panel['ax_idx']]
+        y_col = panel['y_col']
+        count_col = panel['count_col']
         
         for race in color_map.keys():
             d = df[df[race_col] == race].sort_values("Year")
@@ -82,7 +125,6 @@ def visualize_policing(policing_analysis):
                 linewidth = 2.5 if race == "White" else 2
                 linestyle = '--' if race == "White" else '-'
                 
-                # Apply horizontal offset
                 x_vals = d["Year"]
                 
                 # Plot main line
@@ -91,216 +133,260 @@ def visualize_policing(policing_analysis):
                        linewidth=linewidth, linestyle=linestyle,
                        color=color_map[race], label=race)
                 
-                # Add error ribbons if available and requested
-                if show_errors:
-                    se_col = f"{y_col} SE"
-                    if se_col in d.columns and d[se_col].notna().any():
-                        # Calculate 95% confidence interval bounds
-                        ci_lower = d[y_col] - d[se_col]*1.96
-                        ci_upper = d[y_col] + d[se_col]*1.96
-                        
-                        # Create semi-transparent ribbon (lighter for hit rate)
-                        ribbon_alpha = 0.12 if "Hit Rate" in y_col else 0.2
-                        ax.fill_between(x_vals, ci_lower, ci_upper,
-                                       color=color_map[race], 
-                                       alpha=ribbon_alpha, linewidth=0)
-                
-                # Add sample size annotations if requested
-                if show_n:
-                    count_col = None
-                    if "Search Rate" in y_col or "Searches per" in y_col:
-                        count_col = "Search Count"
-                    elif "Hit Rate" in y_col:
-                        count_col = "Hit Count"
-                    elif "Stops per" in y_col:
-                        count_col = "Stop Count"
+                # Add error ribbons if available
+                se_col = f"{y_col} SE"
+                if se_col in d.columns and d[se_col].notna().any():
+                    ci_lower = d[y_col] - d[se_col]*1.96
+                    ci_upper = d[y_col] + d[se_col]*1.96
                     
-                    if count_col and count_col in d.columns:
-                        for idx, row in d.iterrows():
-                            # Only show n counts for 2024
-                            if row["Year"] == 2024:
-                                n = int(row[count_col])
-                                x_pos = row["Year"]
-                                y_val = row[y_col]
-                                
-                                # Use smaller offset and add bbox for better visibility
-                                ax.annotate(f'n={n:,}', 
-                                          xy=(x_pos, y_val),
-                                          xytext=(0, 12), textcoords='offset points',
-                                          fontsize=8, ha='center', alpha=0.9,
-                                          color=color_map[race],
-                                          bbox=dict(boxstyle='round,pad=0.3', 
-                                                   facecolor='white', 
-                                                   edgecolor='none',
-                                                   alpha=0.7))
+                    ribbon_alpha = 0.12 if "Hit Rate" in y_col else 0.2
+                    ax.fill_between(x_vals, ci_lower, ci_upper,
+                                   color=color_map[race], 
+                                   alpha=ribbon_alpha, linewidth=0)
+                
+                # Add sample size annotations for 2024 only
+                if count_col and count_col in d.columns:
+                    for idx, row in d.iterrows():
+                        if row["Year"] == 2024:
+                            n = int(row[count_col])
+                            x_pos = row["Year"]
+                            y_val = row[y_col]
+                            
+                            ax.annotate(f'n={n:,}', 
+                                      xy=(x_pos, y_val),
+                                      xytext=(0, 12), textcoords='offset points',
+                                      fontsize=8, ha='center', alpha=0.9,
+                                      color=color_map[race],
+                                      bbox=dict(boxstyle='round,pad=0.3', 
+                                               facecolor='white', 
+                                               edgecolor='none',
+                                               alpha=0.7))
         
-        ax.set_xlabel("Year", fontsize=12, fontweight='bold')
-        ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
-        ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
-        ax.legend(title="Perceived Race", fontsize=10, title_fontsize=11, 
-                 frameon=True, fancybox=True, shadow=False, 
-                 loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=4)
+        ax.set_xlabel("Year", fontsize=11, fontweight='bold')
+        ax.set_ylabel(panel['ylabel'], fontsize=11, fontweight='bold')
+        ax.set_title(panel['title'], fontsize=13, fontweight='bold', pad=15)
         ax.set_xticks(years)
         ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.5)
-        
+
         # Format y-axis
-        if "Rate" in y_col:
-            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
-        else:
-            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1f}'))
-        
+        def clean_half_steps(y, _):
+            return f'{int(y)}' if float(y).is_integer() else f'{y:.1f}'
+
+        if panel['y_col'] == 'Stops per 1,000':
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f'{y:.0f}'))
+        elif panel['y_col'] == 'Searches per 1,000':
+            ax.yaxis.set_major_formatter(FuncFormatter(clean_half_steps))
+        elif panel['is_rate']:
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f'{y:.0%}'))
+
         # Add extra space at top for labels
         y_min, y_max = ax.get_ylim()
         y_range = y_max - y_min
         ax.set_ylim(y_min, y_max + 0.15 * y_range)
-        
-        plt.tight_layout(rect=[0, 0.1, 1, 1])  # Leave room for legend below
-        return fig
     
-    # Create key figures
-    figs = {}
-    
-    figs['stops'] = _create_figure(
-        "Stops per 1,000",
-        "Police Stop Rates by Perceived Race\n(per 1,000 residents)",
-        "Stops per 1,000 Residents"
+    # Add overall title
+    fig.suptitle(
+        'Police Contact Patterns by Perceived Race',
+        fontsize=16,
+        fontweight='bold',
+        y=0.965
     )
-    
-    # Create combined search rate comparison figure
-    def _create_search_comparison():
-        """Create side-by-side comparison of search rate and searches per capita"""
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7), gridspec_kw={'wspace': 0.3})
-        
-        # Panel A: Searches per 1,000 (per capita)
-        for race in color_map.keys():
-            d = df[df[race_col] == race].sort_values("Year")
-            if len(d) > 0 and d["Searches per 1,000"].notna().any():
-                linewidth = 2.5 if race == "White" else 2
-                linestyle = '--' if race == "White" else '-'
-                x_vals = d["Year"]
-                
-                # Plot main line
-                ax1.plot(x_vals, d["Searches per 1,000"], 
-                        marker="o", markersize=8,
-                        linewidth=linewidth, linestyle=linestyle,
-                        color=color_map[race], label=race)
-                
-                # Add error ribbons
-                se_col = "Searches per 1,000 SE"
-                if se_col in d.columns and d[se_col].notna().any():
-                    ci_lower = d["Searches per 1,000"] - d[se_col]*1.96
-                    ci_upper = d["Searches per 1,000"] + d[se_col]*1.96
-                    ax1.fill_between(x_vals, ci_lower, ci_upper,
-                                    color=color_map[race], alpha=0.15, linewidth=0)
-                
-                # Add sample size annotations
-                if "Search Count" in d.columns:
-                    for _, row in d.iterrows():
-                        # Only show n counts for 2024
-                        if row["Year"] == 2024:
-                            n = int(row["Search Count"])
-                            x_pos = row["Year"]
-                            y_val = row["Searches per 1,000"]
-                            ax1.annotate(f'n={n:,}', 
-                                        xy=(x_pos, y_val),
-                                        xytext=(0, 12), textcoords='offset points',
-                                        fontsize=8, ha='center', alpha=0.9,
-                                        color=color_map[race],
-                                        bbox=dict(boxstyle='round,pad=0.3', 
-                                                 facecolor='white', 
-                                                 edgecolor='none',
-                                                 alpha=0.7))
-        
-        ax1.set_xlabel("Year", fontsize=12, fontweight='bold')
-        ax1.set_ylabel("Searches per 1,000 Residents", fontsize=12, fontweight='bold')
-        ax1.set_title("(A) Searches per Capita\n(per 1,000 residents)", 
-                     fontsize=15, fontweight='bold', pad=15)
-        ax1.set_xticks(years)
-        ax1.grid(True, alpha=0.3, linestyle=':', linewidth=0.5)
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1f}'))
-        
-        # Add extra space at top for labels
-        y_min, y_max = ax1.get_ylim()
-        y_range = y_max - y_min
-        ax1.set_ylim(y_min, y_max + 0.15 * y_range)
-        
-        # Panel B: Search Rate (conditional)
-        for race in color_map.keys():
-            d = df[df[race_col] == race].sort_values("Year")
-            if len(d) > 0 and d["Search Rate"].notna().any():
-                linewidth = 2.5 if race == "White" else 2
-                linestyle = '--' if race == "White" else '-'
-                x_vals = d["Year"]
-                
-                # Plot main line
-                ax2.plot(x_vals, d["Search Rate"], 
-                        marker="o", markersize=8,
-                        linewidth=linewidth, linestyle=linestyle,
-                        color=color_map[race], label=race)
-                
-                # Add error ribbons
-                se_col = "Search Rate SE"
-                if se_col in d.columns and d[se_col].notna().any():
-                    ci_lower = d["Search Rate"] - d[se_col]*1.96
-                    ci_upper = d["Search Rate"] + d[se_col]*1.96
-                    ax2.fill_between(x_vals, ci_lower, ci_upper,
-                                    color=color_map[race], alpha=0.15, linewidth=0)
-                
-                # Add sample size annotations
-                if "Search Count" in d.columns:
-                    for _, row in d.iterrows():
-                        # Only show n counts for 2024
-                        if row["Year"] == 2024:
-                            n = int(row["Search Count"])
-                            x_pos = row["Year"]
-                            y_val = row["Search Rate"]
-                            ax2.annotate(f'n={n:,}', 
-                                        xy=(x_pos, y_val),
-                                        xytext=(0, 12), textcoords='offset points',
-                                        fontsize=8, ha='center', alpha=0.9,
-                                        color=color_map[race],
-                                        bbox=dict(boxstyle='round,pad=0.3', 
-                                                 facecolor='white', 
-                                                 edgecolor='none',
-                                                 alpha=0.7))
-        
-        ax2.set_xlabel("Year", fontsize=12, fontweight='bold')
-        ax2.set_ylabel("Search Rate", fontsize=12, fontweight='bold')
-        ax2.set_title("(B) Conditional Search Rate\n(among those stopped)", 
-                     fontsize=15, fontweight='bold', pad=15)
-        # Legend will be added at figure level below
-        ax2.set_xticks(years)
-        ax2.grid(True, alpha=0.3, linestyle=':', linewidth=0.5)
-        ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
-        
-        # Add extra space at top for labels
-        y_min, y_max = ax2.get_ylim()
-        y_range = y_max - y_min
-        ax2.set_ylim(y_min, y_max + 0.15 * y_range)
-        
-        fig.suptitle('Police Search Patterns by Perceived Race', 
-            fontsize=16, fontweight='bold', y=1.00, va='bottom')
-        
-        # Add centered legend below the plots
-        handles, labels = ax2.get_legend_handles_labels()
-        fig.legend(handles, labels, title="Perceived Race", 
-          fontsize=10, title_fontsize=11,
-          frameon=True, fancybox=True, shadow=False,
-          loc='upper center', bbox_to_anchor=(0.5, 0.02), ncol=4)
-        
-        # Use subplots_adjust instead of tight_layout to avoid warning
-        fig.subplots_adjust(left=0.08, right=0.95, top=0.90, bottom=0.12, wspace=0.3)
-        return fig
-    
-    figs['search_comparison'] = _create_search_comparison()
-    
-    figs['hit_rate'] = _create_figure(
-        "Hit Rate",
-        "Contraband Hit Rate by Perceived Race\n(Outcome Test: Contraband Found Given Search)",
-        "Hit Rate"
+
+    # Add centered legend between title and plots
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        fontsize=11,
+        frameon=True,
+        fancybox=True,
+        shadow=False,
+        loc='upper center',
+        bbox_to_anchor=(0.5, 0.95),
+        ncol=4
     )
-    
-    return figs
+
+    # Manually reserve space for title + legend
+    fig.subplots_adjust(
+        top=0.87,
+        bottom=0.08,
+        left=0.07,
+        right=0.98,
+        hspace=0.30,
+        wspace=0.25
+    )
+
+    return fig
+
+
+
+def visualize_search_and_hit_rates_by_reason(policing_by_reason):
+    """
+    Create a 1x2 figure of pooled (2022-2024) search and hit rates
+    by reason for contact and perceived race.
+
+    Panel A: Search rate by reason for contact
+    Panel B: Hit rate by reason for contact
+    """
+
+    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
+    reason_order = list(policing_by_reason.keys())
+
+    # Build one pooled dataframe across all reasons
+    pooled_rows = []
+
+    for reason, rates_df in policing_by_reason.items():
+        df = rates_df[rates_df["Perceived Race"] != "Other"].copy()
+
+        pooled = (
+            df.groupby("Perceived Race", as_index=False)
+            .agg({
+                "Stop Count": "sum",
+                "Search Count": "sum",
+                "Hit Count": "sum"
+            })
+        )
+
+        pooled["Reason"] = reason
+
+        # Search rate and SE
+        pooled["Search Rate"] = np.where(
+            pooled["Stop Count"] > 0,
+            pooled["Search Count"] / pooled["Stop Count"],
+            np.nan
+        )
+        pooled["Search Rate SE"] = np.where(
+            pooled["Stop Count"] > 0,
+            np.sqrt(pooled["Search Rate"] * (1 - pooled["Search Rate"]) / pooled["Stop Count"]),
+            np.nan
+        )
+
+        # Hit rate and SE
+        pooled["Hit Rate"] = np.where(
+            pooled["Search Count"] > 0,
+            pooled["Hit Count"] / pooled["Search Count"],
+            np.nan
+        )
+        pooled["Hit Rate SE"] = np.where(
+            pooled["Search Count"] > 0,
+            np.sqrt(pooled["Hit Rate"] * (1 - pooled["Hit Rate"]) / pooled["Search Count"]),
+            np.nan
+        )
+
+        pooled_rows.append(pooled)
+
+    pooled_all = pd.concat(pooled_rows, ignore_index=True)
+
+    # Enforce consistent ordering
+    pooled_all["Perceived Race"] = pd.Categorical(
+        pooled_all["Perceived Race"],
+        categories=race_order,
+        ordered=True
+    )
+    pooled_all["Reason"] = pd.Categorical(
+        pooled_all["Reason"],
+        categories=reason_order,
+        ordered=True
+    )
+    pooled_all = pooled_all.sort_values(["Perceived Race", "Reason"])
+
+    # Convert to percent + 95% CI
+    pooled_all["Search Rate %"] = pooled_all["Search Rate"] * 100
+    pooled_all["Search CI %"] = pooled_all["Search Rate SE"] * 1.96 * 100
+    pooled_all["Hit Rate %"] = pooled_all["Hit Rate"] * 100
+    pooled_all["Hit CI %"] = pooled_all["Hit Rate SE"] * 1.96 * 100
+
+    fig, axes = plt.subplots(1, 2, figsize=(20, 8), gridspec_kw={"wspace": 0.18})
+    x = np.arange(len(reason_order))
+
+    # Small offsets so races do not sit exactly on top of each other
+    offsets = {
+        "Black/African American": -0.18,
+        "Hispanic/Latino": -0.06,
+        "White": 0.06,
+        "Asian": 0.18
+    }
+
+    panel_specs = [
+        {
+            "ax": axes[0],
+            "y_col": "Search Rate %",
+            "ci_col": "Search CI %",
+            "ylabel": "Search Rate (%)",
+            "title": "(A) Search Rate by Reason for Contact"
+        },
+        {
+            "ax": axes[1],
+            "y_col": "Hit Rate %",
+            "ci_col": "Hit CI %",
+            "ylabel": "Hit Rate (%)",
+            "title": "(B) Hit Rate by Reason for Contact"
+        }
+    ]
+
+    for panel in panel_specs:
+        ax = panel["ax"]
+
+        for race in race_order:
+            d = pooled_all[pooled_all["Perceived Race"] == race].sort_values("Reason")
+            if d.empty:
+                continue
+
+            y = d[panel["y_col"]].to_numpy()
+            yerr = d[panel["ci_col"]].to_numpy()
+            x_race = x + offsets[race]
+
+            linewidth = 2.5 if race == "White" else 2
+            linestyle = "--" if race == "White" else "-"
+            marker = "o"
+
+            ax.errorbar(
+            x_race,
+            y,
+            yerr=yerr,
+            fmt='o',
+            linestyle='none',   # no connecting lines
+            markersize=8,
+            capsize=4,
+            capthick=1.5,
+            elinewidth=1.8,
+            color=COLOR_MAP[race],
+            label=race
+        )
+
+        ax.set_title(panel["title"], fontsize=13, fontweight="bold", pad=12)
+        ax.set_xlabel("Reason for Contact", fontsize=11, fontweight="bold")
+        ax.set_ylabel(panel["ylabel"], fontsize=11, fontweight="bold")
+        ax.set_xticks(x)
+        ax.set_xticklabels(reason_order, rotation=0, ha="center", fontsize=10)
+        ax.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
+        ax.set_axisbelow(True)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
+
+        # Give a little headroom
+        y_min, y_max = ax.get_ylim()
+        ax.set_ylim(max(0, y_min), y_max * 1.08)
+
+    fig.suptitle(
+        "Search and Contraband Hit Rates by Reason for Contact and Race (2022–2024 Pooled)",
+        fontsize=16,
+        fontweight="bold",
+        y=0.98
+    )
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.93),
+        ncol=4,
+        frameon=True,
+        fontsize=11
+    )
+
+    fig.subplots_adjust(top=0.82, bottom=0.12, left=0.07, right=0.98)
+
+    return fig
 
 
 
@@ -310,18 +396,6 @@ def plot_agency_black_white_hit_rates(agency_hit_df):
     
     Points above the diagonal (higher Black hit rate) are colored green.
     Points below the diagonal (higher White hit rate) are colored red.
-    Uses smart label positioning to avoid overlap.
-    
-    Parameters
-    ----------
-    agency_hit_df : DataFrame
-        Output from rates_utils.summarize_agency_black_white_hit_rates()
-        Expected columns: agency_name, White_Hit_Rate, Black_Hit_Rate, Avg_Search_Count
-    
-    Returns
-    -------
-    matplotlib.figure.Figure
-        Scatter plot with color-coded points and non-overlapping labels
     """
     d = agency_hit_df.copy()
 
@@ -505,10 +579,6 @@ def create_combined_sensitivity_visualization(
     Panel A: Conditional Search Rate
     Panel B: Contraband Hit Rate
     """
-
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as mcolors
 
     latest_year = baseline_df["Year"].max()
 
@@ -701,114 +771,6 @@ def create_combined_sensitivity_visualization(
     plt.tight_layout(rect=[0, 0.05, 1, 0.96])
     return fig
 
-  
-def plot_enhancement_rate_by_race(enhancement_by_primary):
-    """
-    Overall enhancement rates by race (aggregated across all statute levels and categories).
-    """
-    # Aggregate across all statute levels and categories
-    summary = (
-        enhancement_by_primary
-        .groupby('race_std', as_index=False)
-        .agg({'Enhanced': 'sum', 'N': 'sum'})
-    )
-    
-    # Calculate enhancement rate and SE
-    summary['Enhancement Rate'] = summary['Enhanced'] / summary['N']
-    summary['SE'] = np.sqrt(
-        summary['Enhancement Rate'] * (1 - summary['Enhancement Rate']) / summary['N']
-    )
-    
-    # Apply race ordering
-    summary['race_std'] = pd.Categorical(summary['race_std'], categories=RACE_ORDER, ordered=True)
-    summary = summary.sort_values('race_std')
-    
-    # Extract data
-    races = summary['race_std'].astype(str).to_list()
-    enh_rates = summary['Enhancement Rate'].to_numpy() * 100  # Convert to percentage
-    se = summary['SE'].to_numpy() * 100
-    ns = summary['N'].to_numpy()
-    
-    # Calculate 95% CI
-    errors = se * Z
-    
-    # Helper function to darken a color
-    def darken_color(color, factor=0.7):
-        """Darken a hex color by multiplying RGB values by factor"""
-        import matplotlib.colors as mcolors
-        rgb = mcolors.to_rgb(color)
-        darkened = tuple(c * factor for c in rgb)
-        return darkened
-    
-    # Create figure
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    x = np.arange(len(races))
-    colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
-    
-    # Create bars without outline
-    bars = ax.bar(  # noqa: F841
-        x, enh_rates,
-        color=colors,
-        alpha=0.85,
-        edgecolor='none',
-        linewidth=0
-    )
-    
-    # Add error bars matching bar color but darker and more transparent
-    for i, (rate, err, color) in enumerate(zip(enh_rates, errors, colors)):
-        if np.isfinite(rate):
-            ax.errorbar(
-                i, rate,
-                yerr=err,
-                fmt='none',
-                ecolor=darken_color(color),
-                alpha=0.4,
-                capsize=5,
-                capthick=1.5,
-                linewidth=1.5
-            )
-    
-    # Set labels and title
-    ax.set_ylabel('Enhancement Rate (%)', fontsize=12, fontweight='bold')
-    ax.set_xlabel('Canonical Race', fontsize=12, fontweight='bold')
-    ax.set_title(
-        'Overall Enhancement Charge Rate by Race\n(with 95% Confidence Intervals)',
-        fontsize=14,
-        fontweight='bold',
-        pad=20
-    )
-    
-    # Set x-axis
-    ax.set_xticks(x)
-    ax.set_xticklabels(races, rotation=0, ha='center', fontsize=10)
-    
-    # Add grid
-    ax.grid(axis='y', alpha=0.3, linestyle=':', linewidth=0.5)
-    ax.set_axisbelow(True)
-    
-    # Add sample sizes and rates as text above bars
-    for i, (rate, err, n) in enumerate(zip(enh_rates, errors, ns)):
-        if np.isfinite(rate):
-            ax.text(
-                i, rate + err + 1,
-                f'{rate:.1f}%\n(n={int(n):,})',
-                ha='center',
-                va='bottom',
-                fontsize=8,
-                fontweight='bold'
-            )
-    
-    # Set y-axis limits to prevent label clipping
-    ymax = np.nanmax(enh_rates + errors)
-    if np.isfinite(ymax):
-        ax.set_ylim(0, min(100, ymax * 1.2))
-    else:
-        ax.set_ylim(0, 100)
-    
-    fig.tight_layout()
-    return fig
-
 
 
 def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
@@ -840,7 +802,6 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
     # Helper function to darken a color
     def darken_color(color, factor=0.7):
         """Darken a hex color by multiplying RGB values by factor"""
-        import matplotlib.colors as mcolors
         rgb = mcolors.to_rgb(color)
         darkened = tuple(c * factor for c in rgb)
         return darkened
@@ -989,157 +950,329 @@ def plot_enhancement_rate_by_race_statute(enhancement_by_primary):
 
 def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_categories=None):
     """
-    For each charge category, create a 2-panel figure:
-      (A) Misdemeanor charges (left) and (B) Felony charges (right),
-    with bars colored by race (COLOR_MAP) and 95% CI error bars.
+    Returns a dict with:
+      - 'assault_violence_weapons': 2x2 figure
+          Row 1: Assault/Violence (Misdemeanor, Felony)
+          Row 2: Weapons (Misdemeanor, Felony)
+      - 'dui': 1x2 figure
+          DUI (Misdemeanor, Felony)
+
+    Bars are colored by race using COLOR_MAP and include 95% CI error bars.
     """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as mcolors
 
     df = enhancement_by_primary.copy()
 
-    # Categories to plot
-    if top_categories is not None:
-        categories = list(top_categories)
-        df = df[df["primary_charge_category"].isin(categories)].copy()
-    else:
-        categories = sorted(df["primary_charge_category"].dropna().unique().tolist())
+    # --- resolve category names exactly as they appear in the data ---
+    available_categories = df["primary_charge_category"].dropna().astype(str).unique().tolist()
 
-    # Helper: darken a color for error bars
+    def resolve_category_name(target):
+        target_norm = target.strip().lower()
+        for cat in available_categories:
+            if cat.strip().lower() == target_norm:
+                return cat
+        raise ValueError(
+            f"Could not find category '{target}' in primary_charge_category.\n"
+            f"Available categories: {sorted(available_categories)}"
+        )
+
+    assault_cat = resolve_category_name("Assault/Violence")
+    weapons_cat = resolve_category_name("Weapons")
+    dui_cat = resolve_category_name("DUI")
+
+    # Optional filtering if user passes a subset
+    if top_categories is not None:
+        keep = {str(x).strip().lower() for x in top_categories}
+        requested = {
+            assault_cat.strip().lower(),
+            weapons_cat.strip().lower(),
+            dui_cat.strip().lower()
+        }
+        use_requested = requested.intersection(keep)
+        if use_requested:
+            df = df[df["primary_charge_category"].str.strip().str.lower().isin(use_requested)].copy()
+
     def darken_color(color, factor=0.7):
         rgb = mcolors.to_rgb(color)
         return tuple(c * factor for c in rgb)
 
-    figs = {}
+    def summarize_category(category_name):
+        cat = df[df["primary_charge_category"] == category_name].copy()
 
-    for category in categories:
-        cat = df[df["primary_charge_category"] == category].copy()
-
-        # Aggregate by race and statute
         summary = (
             cat.groupby(["race_std", "primary_statute_level"], as_index=False)
                .agg({"Enhanced": "sum", "N": "sum"})
         )
 
-        # Guard: if empty, skip
         if summary.empty:
-            continue
+            return None, None
 
-        summary["Enhancement Rate"] = summary["Enhanced"] / summary["N"]
-        summary["SE"] = np.sqrt(summary["Enhancement Rate"] * (1 - summary["Enhancement Rate"]) / summary["N"])
+        summary["Enhancement Rate"] = np.where(
+            summary["N"] > 0,
+            summary["Enhanced"] / summary["N"],
+            np.nan
+        )
+        summary["SE"] = np.where(
+            summary["N"] > 0,
+            np.sqrt(summary["Enhancement Rate"] * (1 - summary["Enhancement Rate"]) / summary["N"]),
+            np.nan
+        )
 
-        # Apply race ordering
-        summary["race_std"] = pd.Categorical(summary["race_std"], categories=RACE_ORDER, ordered=True)
+        summary["race_std"] = pd.Categorical(
+            summary["race_std"],
+            categories=RACE_ORDER,
+            ordered=True
+        )
         summary = summary.sort_values(["race_std", "primary_statute_level"])
 
-        mis = summary[summary["primary_statute_level"] == "Misdemeanor"].copy()
-        fel = summary[summary["primary_statute_level"] == "Felony"].copy()
+        present_races = [
+            r for r in RACE_ORDER
+            if r in set(summary["race_std"].dropna().astype(str))
+        ]
 
-        # Determine which races exist in either panel, preserving RACE_ORDER
-        present_races = set(mis["race_std"].dropna().astype(str)).union(
-            set(fel["race_std"].dropna().astype(str))
-        )
-        races = [r for r in RACE_ORDER if r in present_races]
+        return summary, present_races
 
-        # Build aligned series per race (so both panels share the same x order)
-        def aligned_arrays(subdf):
-            d = {str(r): row for _, row in subdf.iterrows() for r in [row["race_std"]]}
-            rates = np.array([100 * (d[r]["Enhancement Rate"] if r in d else np.nan) for r in races], dtype=float)
-            ses   = np.array([100 * (d[r]["SE"] if r in d else np.nan) for r in races], dtype=float)
-            ns    = np.array([d[r]["N"] if r in d else 0 for r in races], dtype=float)
-            errs  = ses * Z
-            return rates, errs, ns
+    def aligned_arrays(summary, races, statute_level):
+        sub = summary[summary["primary_statute_level"] == statute_level].copy()
+        lookup = {str(row["race_std"]): row for _, row in sub.iterrows()}
 
-        mis_rates, mis_errs, mis_n = aligned_arrays(mis)
-        fel_rates, fel_errs, fel_n = aligned_arrays(fel)
+        rates = np.array([
+            100 * lookup[r]["Enhancement Rate"] if r in lookup else np.nan
+            for r in races
+        ], dtype=float)
 
+        ses = np.array([
+            100 * lookup[r]["SE"] if r in lookup else np.nan
+            for r in races
+        ], dtype=float)
+
+        ns = np.array([
+            lookup[r]["N"] if r in lookup else 0
+            for r in races
+        ], dtype=float)
+
+        errs = ses * Z
+        return rates, errs, ns
+
+    def plot_panel(ax, rates, errs, ns, races, panel_title, show_ylabel=False):
         x = np.arange(len(races))
         colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
 
-        # Figure
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8), gridspec_kw={"wspace": 0.3})
-
-        # ---- Panel A: Misdemeanor ----
-        ax1.bar(x, np.nan_to_num(mis_rates, nan=0.0), color=colors, alpha=0.85, edgecolor="none", linewidth=0)
-
-        for i, (rate, err, col, n) in enumerate(zip(mis_rates, mis_errs, colors, mis_n)):
-            if np.isfinite(rate) and n > 0:
-                ax1.errorbar(i, rate, yerr=err, fmt="none", ecolor=darken_color(col),
-                             alpha=0.4, capsize=5, capthick=1.5, linewidth=1.5)
-
-        ax1.set_title("(A) Misdemeanor Charges", fontsize=13, fontweight="bold", pad=15)
-        ax1.set_xlabel("Canonical Race", fontsize=12, fontweight="bold")
-        ax1.set_ylabel("Enhancement Rate (%)", fontsize=12, fontweight="bold")
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(races, rotation=0, ha="center", fontsize=10)
-        ax1.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
-        ax1.set_axisbelow(True)
-
-        max_y_mis = 0
-        for i, (rate, err, n) in enumerate(zip(mis_rates, mis_errs, mis_n)):
-            if np.isfinite(rate) and n > 0:
-                y_pos = rate + err + 0.3
-                ax1.text(i, y_pos, f"{rate:.1f}%\n(n={int(n):,})",
-                         ha="center", va="bottom", fontsize=8, fontweight="bold")
-                max_y_mis = max(max_y_mis, y_pos + 2)
-        # add a little headroom so text doesn't touch the top spine
-        pad = 2  # percentage points; tweak to taste (e.g., 1.5–3)
-        ymax_mis = max_y_mis if max_y_mis > 0 else 100
-        ax1.set_ylim(0, min(100, ymax_mis + pad))
-
-        # ---- Panel B: Felony ----
-        ax2.bar(x, np.nan_to_num(fel_rates, nan=0.0), color=colors, alpha=0.85, edgecolor="none", linewidth=0)
-
-        for i, (rate, err, col, n) in enumerate(zip(fel_rates, fel_errs, colors, fel_n)):
-            if np.isfinite(rate) and n > 0:
-                ax2.errorbar(i, rate, yerr=err, fmt="none", ecolor=darken_color(col),
-                             alpha=0.4, capsize=5, capthick=1.5, linewidth=1.5)
-
-        ax2.set_title("(B) Felony Charges", fontsize=13, fontweight="bold", pad=15)
-        ax2.set_xlabel("Canonical Race", fontsize=12, fontweight="bold")
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(races, rotation=0, ha="center", fontsize=10)
-        ax2.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
-        ax2.set_axisbelow(True)
-
-        max_y_fel = 0
-        for i, (rate, err, n) in enumerate(zip(fel_rates, fel_errs, fel_n)):
-            if np.isfinite(rate) and n > 0:
-                y_pos = rate + err + 0.3
-                ax2.text(i, y_pos, f"{rate:.1f}%\n(n={int(n):,})",
-                         ha="center", va="bottom", fontsize=8, fontweight="bold")
-                max_y_fel = max(max_y_fel, y_pos + 2)
-            ymax_fel = max_y_fel if max_y_fel > 0 else 100
-            ax2.set_ylim(0, min(100, ymax_fel + pad))
-        # Suptitle
-        fig.suptitle(
-            f"{category} Enhancement Charge Rate by Race and Statute Level\n(with 95% Confidence Intervals)",
-            fontsize=15,
-            fontweight="bold",
-            y=1.03
+        heights = np.where(np.isfinite(rates), rates, 0.0)
+        bars = ax.bar(
+            x,
+            heights,
+            color=colors,
+            alpha=0.85,
+            edgecolor="none",
+            linewidth=0
         )
 
+        # Hide truly missing bars rather than showing a visible zero bar
+        for bar, rate in zip(bars, rates):
+            if not np.isfinite(rate):
+                bar.set_alpha(0.0)
+
+        for i, (rate, err, col, n) in enumerate(zip(rates, errs, colors, ns)):
+            if np.isfinite(rate) and n > 0:
+                ax.errorbar(
+                    i, rate,
+                    yerr=err,
+                    fmt="none",
+                    ecolor=darken_color(col),
+                    alpha=0.4,
+                    capsize=5,
+                    capthick=1.5,
+                    linewidth=1.5
+                )
+
+        ax.set_title(panel_title, fontsize=13, fontweight="bold", pad=15)
+        ax.set_xlabel("Canonical Race", fontsize=12, fontweight="bold")
+        if show_ylabel:
+            ax.set_ylabel("Enhancement Rate (%)", fontsize=12, fontweight="bold")
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(races, rotation=0, ha="center", fontsize=10)
+        ax.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
+        ax.set_axisbelow(True)
+
+        max_y = 0
+        for i, (rate, err, n) in enumerate(zip(rates, errs, ns)):
+            if np.isfinite(rate) and n > 0:
+                y_pos = rate + err + 0.3
+                ax.text(
+                    i, y_pos,
+                    f"{rate:.1f}%\n(n={int(n):,})",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold"
+                )
+                max_y = max(max_y, y_pos + 2)
+
+        return max_y
+
+    def make_two_panel_category_figure(category_name, figure_title):
+        summary, races = summarize_category(category_name)
+        if summary is None or not races:
+            return None
+
+        mis_rates, mis_errs, mis_n = aligned_arrays(summary, races, "Misdemeanor")
+        fel_rates, fel_errs, fel_n = aligned_arrays(summary, races, "Felony")
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8), gridspec_kw={"wspace": 0.3})
+
+        max_y1 = plot_panel(
+            ax1, mis_rates, mis_errs, mis_n, races,
+            "(A) Misdemeanor Charges",
+            show_ylabel=True
+        )
+        max_y2 = plot_panel(
+            ax2, fel_rates, fel_errs, fel_n, races,
+            "(B) Felony Charges",
+            show_ylabel=False
+        )
+
+        ymax = min(100, max(max_y1, max_y2) + 2 if max(max_y1, max_y2) > 0 else 100)
+        ax1.set_ylim(0, ymax)
+        ax2.set_ylim(0, ymax)
+
+        fig.suptitle(
+            figure_title,
+            fontsize=15,
+            fontweight="bold",
+            y=0.98
+        )
         fig.subplots_adjust(left=0.08, right=0.95, top=0.88, bottom=0.17, wspace=0.3)
 
-        figs[category] = fig
+        return fig
+
+    def make_four_panel_combined_figure(cat1, cat2, figure_title):
+        summary1, races1 = summarize_category(cat1)
+        summary2, races2 = summarize_category(cat2)
+
+        if summary1 is None and summary2 is None:
+            return None
+
+        fig, axes = plt.subplots(2, 2, figsize=(18, 13), gridspec_kw={"wspace": 0.3, "hspace": 0.4})
+        ax1, ax2, ax3, ax4 = axes.flatten()
+
+        # Row 1: Assault/Violence
+        if summary1 is not None and races1:
+            mis_rates, mis_errs, mis_n = aligned_arrays(summary1, races1, "Misdemeanor")
+            fel_rates, fel_errs, fel_n = aligned_arrays(summary1, races1, "Felony")
+
+            max_y1 = plot_panel(
+                ax1, mis_rates, mis_errs, mis_n, races1,
+                f"(A) {cat1}: Misdemeanor",
+                show_ylabel=True
+            )
+            max_y2 = plot_panel(
+                ax2, fel_rates, fel_errs, fel_n, races1,
+                f"(B) {cat1}: Felony",
+                show_ylabel=False
+            )
+
+            ymax_row1 = min(100, max(max_y1, max_y2) + 2 if max(max_y1, max_y2) > 0 else 100)
+            ax1.set_ylim(0, ymax_row1)
+            ax2.set_ylim(0, ymax_row1)
+        else:
+            ax1.axis("off")
+            ax2.axis("off")
+
+        # Row 2: Weapons
+        if summary2 is not None and races2:
+            mis_rates, mis_errs, mis_n = aligned_arrays(summary2, races2, "Misdemeanor")
+            fel_rates, fel_errs, fel_n = aligned_arrays(summary2, races2, "Felony")
+
+            max_y3 = plot_panel(
+                ax3, mis_rates, mis_errs, mis_n, races2,
+                f"(C) {cat2}: Misdemeanor",
+                show_ylabel=True
+            )
+            max_y4 = plot_panel(
+                ax4, fel_rates, fel_errs, fel_n, races2,
+                f"(D) {cat2}: Felony",
+                show_ylabel=False
+            )
+
+            ymax_row2 = min(100, max(max_y3, max_y4) + 2 if max(max_y3, max_y4) > 0 else 100)
+            ax3.set_ylim(0, ymax_row2)
+            ax4.set_ylim(0, ymax_row2)
+        else:
+            ax3.axis("off")
+            ax4.axis("off")
+
+        fig.suptitle(
+            figure_title,
+            fontsize=16,
+            fontweight="bold",
+            y=0.98
+        )
+        fig.subplots_adjust(left=0.08, right=0.95, top=0.88, bottom=0.12, wspace=0.3, hspace=0.4)
+
+        return fig
+
+    figs = {}
+
+    figs["assault_violence_weapons"] = make_four_panel_combined_figure(
+        assault_cat,
+        weapons_cat,
+        "Enhancement Charge Rate by Race and Statute Level:\nAssault/Violence and Weapons"
+    )
+
+    figs["dui"] = make_two_panel_category_figure(
+        dui_cat,
+        "Enhancement Charge Rate by Race and Statute Level:\nDUI"
+    )
 
     return figs
 
 
 
-def plot_wobbler_overall_felony_rate(df):
+def plot_wobbler_combined(df, top_categories=None, sort_by="rate_overall"):
     """
-    Overall wobbler felony filing rate by race (95% CI).
+    Create a combined two-panel figure for wobbler charges:
+    - Panel A: Overall wobbler felony filing rate by race
+    - Panel B: Cleveland dot plot by charge category and race
     """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as mcolors
-
+    
     Z_ = globals().get("Z", 1.96)
-
-    # Build table (same logic as your table function)
+    races = list(globals().get("RACE_ORDER", ["Black/African American", "Hispanic/Latino", "White", "Asian"]))
+    color_map = globals().get("COLOR_MAP", {})
+    
+    # Helper: darken a color for error bars
+    def darken(color, factor=0.7):
+        rgb = mcolors.to_rgb(color)
+        return tuple(c * factor for c in rgb)
+    
+    # Calculate figure height based on number of categories for Panel B
     wobblers = df[df["is_wobbler"]].copy()
+    
+    # Determine categories for Panel B
+    if top_categories is not None:
+        g = wobblers.groupby(["charge_category", "race_std", "statute_level"]).size().unstack(fill_value=0).reset_index()
+        for col in ["Felony", "Misdemeanor"]:
+            if col not in g.columns:
+                g[col] = 0
+        g["Total"] = g["Felony"] + g["Misdemeanor"]
+        existing = set(g["charge_category"].unique())
+        categories = [c for c in top_categories if c in existing]
+        n_categories = len(categories)
+    else:
+        g = wobblers.groupby(["charge_category", "race_std", "statute_level"]).size().unstack(fill_value=0).reset_index()
+        for col in ["Felony", "Misdemeanor"]:
+            if col not in g.columns:
+                g[col] = 0
+        g["Total"] = g["Felony"] + g["Misdemeanor"]
+        n_categories = len(g["charge_category"].unique())
+    
+    # Create figure with side-by-side panels
+    fig_height = max(8, 0.35 * n_categories + 2)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, fig_height), gridspec_kw={'wspace': 0.30, 'width_ratios': [1, 1.5]})
+    
+    # ==========================================
+    # PANEL A: Overall Wobbler Felony Rate
+    # ==========================================
     summary = (
         wobblers.groupby(["race_std", "statute_level"])
         .size()
@@ -1148,7 +1281,7 @@ def plot_wobbler_overall_felony_rate(df):
     for col in ["Felony", "Misdemeanor"]:
         if col not in summary.columns:
             summary[col] = 0
-
+    
     summary["Total"] = summary["Felony"] + summary["Misdemeanor"]
     summary["Felony Rate"] = np.where(summary["Total"] > 0, summary["Felony"] / summary["Total"], np.nan)
     summary["Felony Rate SE"] = np.where(
@@ -1156,89 +1289,60 @@ def plot_wobbler_overall_felony_rate(df):
         np.sqrt(summary["Felony Rate"] * (1 - summary["Felony Rate"]) / summary["Total"]),
         np.nan,
     )
-
-    # Enforce race order and drop races not present (optional)
-    summary = summary.reindex(RACE_ORDER)
-
-    races = summary.index.astype(str).tolist()
+    
+    summary = summary.reindex(races)
+    
+    races_a = summary.index.astype(str).tolist()
     rates = (summary["Felony Rate"].to_numpy(dtype=float) * 100)
-    ses   = (summary["Felony Rate SE"].to_numpy(dtype=float) * 100)
-    ns    = summary["Total"].to_numpy(dtype=float)
-    errs  = ses * Z_
-
-    def darken(color, factor=0.7):
-        rgb = mcolors.to_rgb(color)
-        return tuple(c * factor for c in rgb)
-
-    colors = [globals().get("COLOR_MAP", {}).get(r, "#7f7f7f") for r in races]
-    x = np.arange(len(races))
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(x, np.nan_to_num(rates, nan=0.0), color=colors, alpha=0.85, edgecolor="none", linewidth=0)
-
+    ses = (summary["Felony Rate SE"].to_numpy(dtype=float) * 100)
+    ns = summary["Total"].to_numpy(dtype=float)
+    errs = ses * Z_
+    
+    colors = [color_map.get(r, "#7f7f7f") for r in races_a]
+    x = np.arange(len(races_a))
+    
+    ax1.bar(x, np.nan_to_num(rates, nan=0.0), color=colors, alpha=0.85, edgecolor="none", linewidth=0)
+    
     for i, (rate, err, col, n) in enumerate(zip(rates, errs, colors, ns)):
         if np.isfinite(rate) and n > 0:
-            ax.errorbar(i, rate, yerr=err, fmt="none", ecolor=darken(col),
+            ax1.errorbar(i, rate, yerr=err, fmt="none", ecolor=darken(col),
                         alpha=0.4, capsize=5, capthick=1.5, linewidth=1.5)
-
-    ax.set_title("Wobbler Charges: Felony Filing Rate by Race\n(with 95% Confidence Intervals)",
-                 fontsize=14, fontweight="bold", pad=15)
-    ax.set_xlabel("Canonical Race", fontsize=12, fontweight="bold")
-    ax.set_ylabel("Wobbler Charged as Felony (%)", fontsize=12, fontweight="bold")
-    ax.set_xticks(x)
-    ax.set_xticklabels(races, fontsize=10)
-    ax.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
-    ax.set_axisbelow(True)
-
-    # bar labels (rate + n), with a little headroom
+    
+    ax1.set_title("(A) Overall Wobbler Felony Filing Rate by Race",
+                 fontsize=13, fontweight="bold", pad=15)
+    ax1.set_xlabel("Canonical Race", fontsize=11, fontweight="bold")
+    ax1.set_ylabel("Wobbler Charged as Felony (%)", fontsize=11, fontweight="bold")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(races_a, fontsize=10)
+    ax1.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
+    ax1.set_axisbelow(True)
+    
     max_y = 0
     for i, (rate, err, n) in enumerate(zip(rates, errs, ns)):
         if np.isfinite(rate) and n > 0:
             y_pos = rate + err + 0.7
-            ax.text(i, y_pos, f"{rate:.1f}%\n(n={int(n):,})",
+            ax1.text(i, y_pos, f"{rate:.1f}%\n(n={int(n):,})",
                     ha="center", va="bottom", fontsize=8, fontweight="bold")
             max_y = max(max_y, y_pos + 2)
-
-    pad = 2  # extra space above the highest label (percentage points)
-
+    
+    pad = 2
     ymax = max_y if max_y > 0 else 100
-    ax.set_ylim(0, min(100, ymax + pad))
-    fig.tight_layout()
-    return fig
-
-
-
-def plot_wobbler_cleveland_dot(df, top_categories=None, sort_by="rate_overall"):
-    """
-    Cleveland dot plot for wobbler felony filing rate by charge category and race.
-
-    If top_categories is provided, only those categories are plotted.
-    Otherwise, all available categories are used.
-    """
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-
-    Z_ = globals().get("Z", 1.96)
-    races = list(globals().get("RACE_ORDER", ["Black/African American", "Hispanic/Latino", "White", "Asian"]))
-    color_map = globals().get("COLOR_MAP", {})
-
-    # Filter to wobblers
-    wobblers = df[df["is_wobbler"]].copy()
-
-    # Aggregate counts by category x race x statute
+    ax1.set_ylim(0, min(100, ymax + pad))
+    
+    # ==========================================
+    # PANEL B: Cleveland Dot Plot by Category
+    # ==========================================
     g = (
         wobblers.groupby(["charge_category", "race_std", "statute_level"])
         .size()
         .unstack(fill_value=0)
         .reset_index()
     )
-
-    # Ensure statute columns exist
+    
     for col in ["Felony", "Misdemeanor"]:
         if col not in g.columns:
             g[col] = 0
-
+    
     g["Total"] = g["Felony"] + g["Misdemeanor"]
     g["Felony Rate"] = np.where(g["Total"] > 0, g["Felony"] / g["Total"], np.nan)
     g["SE"] = np.where(
@@ -1249,21 +1353,19 @@ def plot_wobbler_cleveland_dot(df, top_categories=None, sort_by="rate_overall"):
     g["lo"] = (g["Felony Rate"] - Z_ * g["SE"]) * 100
     g["hi"] = (g["Felony Rate"] + Z_ * g["SE"]) * 100
     g["x"] = g["Felony Rate"] * 100
-
-    # Keep only races of interest
+    
     g = g[g["race_std"].isin(races)].copy()
     g["race_std"] = pd.Categorical(g["race_std"], categories=races, ordered=True)
-
-    # Use supplied category list if provided
+    
+    # Determine and sort categories
     if top_categories is not None:
         categories = list(top_categories)
         existing = set(g["charge_category"].unique())
         categories = [c for c in categories if c in existing]
         g = g[g["charge_category"].isin(categories)].copy()
     else:
-        # Automatic ordering based on all available categories
         cat_totals = g.groupby("charge_category")["Total"].sum().sort_values(ascending=False)
-
+        
         overall_rate = g.groupby("charge_category")[["Felony", "Misdemeanor"]].sum()
         overall_rate["Total"] = overall_rate["Felony"] + overall_rate["Misdemeanor"]
         overall_rate["Rate"] = np.where(
@@ -1271,7 +1373,7 @@ def plot_wobbler_cleveland_dot(df, top_categories=None, sort_by="rate_overall"):
             overall_rate["Felony"] / overall_rate["Total"],
             np.nan
         )
-
+        
         if sort_by == "total":
             categories = cat_totals.index.tolist()
         elif sort_by == "rate_overall":
@@ -1281,47 +1383,43 @@ def plot_wobbler_cleveland_dot(df, top_categories=None, sort_by="rate_overall"):
             categories = blk.sort_values(ascending=False).index.tolist()
         else:
             categories = sorted(cat_totals.index.tolist())
-
-    # Final filter/order
+    
     g = g[g["charge_category"].isin(categories)].copy()
     categories = list(categories)
-
+    
     y_base = np.arange(len(categories))
     offsets = np.linspace(-0.32, 0.32, num=len(races))
-
-    fig_h = max(6, 0.35 * len(categories) + 2)
-    fig, ax = plt.subplots(figsize=(12, fig_h))
-
-    ax.grid(axis="x", alpha=0.15)
-    ax.set_axisbelow(True)
-
+    
+    ax2.grid(axis="x", alpha=0.15)
+    ax2.set_axisbelow(True)
+    
     for i, y0 in enumerate(y_base):
         if i % 2 == 0:
-            ax.axhspan(y0 - 0.5, y0 + 0.5, color="0.95", alpha=1.0, zorder=0)
-
+            ax2.axhspan(y0 - 0.5, y0 + 0.5, color="0.95", alpha=1.0, zorder=0)
+    
     for r_i, race in enumerate(races):
         sub = g[g["race_std"] == race].copy()
         sub = sub.set_index("charge_category").reindex(categories)
         y = y_base + offsets[r_i]
-
-        x = sub["x"].to_numpy(dtype=float)
+        
+        x_vals = sub["x"].to_numpy(dtype=float)
         lo = sub["lo"].to_numpy(dtype=float)
         hi = sub["hi"].to_numpy(dtype=float)
         n = sub["Total"].to_numpy(dtype=float)
-
-        for yi, xi, l, h, nn in zip(y, x, lo, hi, n):
+        
+        for yi, xi, l, h, nn in zip(y, x_vals, lo, hi, n):
             if np.isfinite(xi) and nn > 0 and np.isfinite(l) and np.isfinite(h):
-                ax.hlines(
+                ax2.hlines(
                     yi, l, h,
                     linewidth=1.2,
                     alpha=0.18,
                     color=color_map.get(race, "#7f7f7f"),
                     zorder=2
                 )
-
+        
         if race == "White":
-            ax.scatter(
-                x, y,
+            ax2.scatter(
+                x_vals, y,
                 s=95,
                 label=race,
                 facecolors="none",
@@ -1331,8 +1429,8 @@ def plot_wobbler_cleveland_dot(df, top_categories=None, sort_by="rate_overall"):
                 zorder=3,
             )
         else:
-            ax.scatter(
-                x, y,
+            ax2.scatter(
+                x_vals, y,
                 s=95,
                 label=race,
                 color=color_map.get(race, "#7f7f7f"),
@@ -1340,41 +1438,48 @@ def plot_wobbler_cleveland_dot(df, top_categories=None, sort_by="rate_overall"):
                 alpha=0.95,
                 zorder=3,
             )
-
+    
     for y in np.arange(-0.5, len(categories), 1):
-        ax.axhline(y, color="gray", linewidth=0.8, alpha=0.35, zorder=1)
-
-    ax.set_yticks(y_base)
-    ax.set_yticklabels(categories, fontsize=11)
-    ax.invert_yaxis()
-
-    ax.set_xlabel("Wobbler Charged as Felony (%)", fontsize=12, fontweight="bold")
-    ax.set_ylabel("Charge Category", fontsize=12, fontweight="bold")
-    ax.set_title(
-        "Felony Charging Rate for Wobbler Charges by Race and Charge Category",
-        fontsize=14,
+        ax2.axhline(y, color="gray", linewidth=0.8, alpha=0.35, zorder=1)
+    
+    ax2.set_yticks(y_base)
+    ax2.set_yticklabels(categories, fontsize=11)
+    ax2.invert_yaxis()
+    
+    ax2.set_xlabel("Wobbler Charged as Felony (%)", fontsize=11, fontweight="bold")
+    ax2.set_ylabel("Charge Category", fontsize=11, fontweight="bold")
+    ax2.set_title(
+        "(B) Felony Charging Rate by Charge Category and Race",
+        fontsize=13,
         fontweight="bold",
         pad=12,
     )
-
+    
     xmin = np.nanmin(g["lo"].to_numpy(dtype=float))
     xmax = np.nanmax(g["hi"].to_numpy(dtype=float))
     if np.isfinite(xmin) and np.isfinite(xmax):
-        ax.set_xlim(max(0, xmin - 2), min(100, xmax + 2))
+        ax2.set_xlim(max(0, xmin - 2), min(100, xmax + 2))
     else:
-        ax.set_xlim(0, 100)
-
-    ax.legend(
+        ax2.set_xlim(0, 100)
+    
+    ax2.legend(
         title="Canonical Race",
         frameon=True,
         fontsize=9,
         title_fontsize=10,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.12),
-        ncol=4
+        loc="upper left"
     )
+    
+    # Overall title
+    fig.suptitle(
+        "Wobbler Charges: Felony Filing Rates by Race and Charge Category\n(with 95% Confidence Intervals)",
+        fontsize=15,
+        fontweight="bold",
+        y=0.995
+    )
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
 
-    fig.tight_layout(rect=[0, 0.15, 1, 1])
     return fig
 
 
@@ -1389,194 +1494,3 @@ def export_figure_to_pdf(fig, fig_name):
     plt.close(fig)
 
     print(f"Saved: {fig_name}.pdf")
-
-
-
-def visualize_search_rates_by_reason(policing_by_reason):
-    """
-    Create a 2x2 grid visualization of pooled (2022-2024) search rates by reason for contact.
-    Uses bar charts with consistent racial ordering.
-    """
-    fig, axes = plt.subplots(2, 2, figsize=(20, 14))
-    axes = axes.flatten()
-    
-    # Define consistent race order
-    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
-    
-    for idx, (reason, rates_df) in enumerate(policing_by_reason.items()):
-        ax = axes[idx]
-        
-        # Filter out "Other" race category
-        rates_df_filtered = rates_df[rates_df["Perceived Race"] != "Other"].copy()
-        
-        # Pool across all years (2022-2024)
-        pooled = (
-            rates_df_filtered.groupby("Perceived Race", as_index=False)
-            .agg({
-                "Stop Count": "sum",
-                "Search Count": "sum"
-            })
-        )
-        
-        # Calculate pooled search rate and SE
-        pooled["Search Rate"] = pooled["Search Count"] / pooled["Stop Count"]
-        pooled["Search Rate SE"] = np.sqrt(
-            pooled["Search Rate"] * (1 - pooled["Search Rate"]) / pooled["Stop Count"]
-        )
-        
-        # Apply race ordering
-        pooled["Perceived Race"] = pd.Categorical(
-            pooled["Perceived Race"], 
-            categories=race_order, 
-            ordered=True
-        )
-        pooled = pooled.sort_values("Perceived Race")
-        
-        # Convert to percentage
-        pooled["Search Rate %"] = pooled["Search Rate"] * 100
-        pooled["SE %"] = pooled["Search Rate SE"] * 100
-        pooled["CI"] = pooled["SE %"] * 1.96
-        
-        # Prepare data for plotting
-        races = pooled["Perceived Race"].astype(str).tolist()
-        rates = pooled["Search Rate %"].to_numpy()
-        errors = pooled["CI"].to_numpy()
-        colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
-        
-        x = np.arange(len(races))
-        
-        # Create bar chart
-        bars = ax.bar(x, rates, color=colors, alpha=0.85, edgecolor='none')
-        
-        # Add error bars
-        ax.errorbar(x, rates, yerr=errors, fmt='none', 
-                   ecolor='black', alpha=0.5, capsize=5, capthick=2, linewidth=2)
-        
-        # Set y-axis limits with headroom
-        max_y = np.nanmax(rates + errors)
-        if np.isfinite(max_y):
-            ax.set_ylim(0, max_y * 1.15)
-
-        # Add value labels on top of bars
-        label_offset = max_y * 0.03 if np.isfinite(max_y) else 0.5
-
-        for i, (rate, err, n) in enumerate(zip(rates, errors, pooled["Search Count"])):
-            if np.isfinite(rate):
-                ax.text(i, rate + err + label_offset,
-                    f'{rate:.1f}%\n(n={int(n):,})',
-                    ha='center', va='bottom', fontsize=9, fontweight='bold')
-        
-        # Format plot
-        ax.set_xlabel("Perceived Race", fontsize=11, fontweight='bold')
-        ax.set_ylabel("Search Rate (%)", fontsize=11, fontweight='bold')
-        ax.set_title(f"{reason}", fontsize=12, fontweight='bold', pad=10)
-        ax.set_xticks(x)
-        ax.set_xticklabels(races, rotation=0, ha='center', fontsize=10)
-        ax.grid(axis='y', alpha=0.3, linestyle=':', linewidth=0.5)
-        ax.set_axisbelow(True)
-    
-    fig.suptitle('Conditional Search Rates by Reason for Contact and Race (2022-2024 Pooled)', 
-                fontsize=16, fontweight='bold', y=0.995)
-    
-    plt.tight_layout(rect=[0, 0.03, 1, 0.99])
-    return fig
-
-
-
-def visualize_hit_rates_by_reason(policing_by_reason):
-    """
-    Create a 2x2 grid visualization of pooled (2022-2024) hit rates by reason for contact.
-    Uses bar charts with consistent racial ordering.
-    
-    """
-    fig, axes = plt.subplots(2, 2, figsize=(20, 14))
-    axes = axes.flatten()
-    
-    # Define consistent race order
-    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
-    
-    for idx, (reason, rates_df) in enumerate(policing_by_reason.items()):
-        ax = axes[idx]
-        
-        # Filter out "Other" race category
-        rates_df_filtered = rates_df[rates_df["Perceived Race"] != "Other"].copy()
-        
-        # Pool across all years (2022-2024)
-        pooled = (
-            rates_df_filtered.groupby("Perceived Race", as_index=False)
-            .agg({
-                "Search Count": "sum",
-                "Hit Count": "sum"
-            })
-        )
-        
-        # Calculate pooled hit rate and SE
-        pooled["Hit Rate"] = np.where(
-            pooled["Search Count"] > 0,
-            pooled["Hit Count"] / pooled["Search Count"],
-            np.nan
-        )
-        pooled["Hit Rate SE"] = np.where(
-            pooled["Search Count"] > 0,
-            np.sqrt(pooled["Hit Rate"] * (1 - pooled["Hit Rate"]) / pooled["Search Count"]),
-            np.nan
-        )
-        
-        # Apply race ordering
-        pooled["Perceived Race"] = pd.Categorical(
-            pooled["Perceived Race"], 
-            categories=race_order, 
-            ordered=True
-        )
-        pooled = pooled.sort_values("Perceived Race")
-        
-        # Convert to percentage
-        pooled["Hit Rate %"] = pooled["Hit Rate"] * 100
-        pooled["SE %"] = pooled["Hit Rate SE"] * 100
-        pooled["CI"] = pooled["SE %"] * 1.96
-        
-        # Prepare data for plotting
-        races = pooled["Perceived Race"].astype(str).tolist()
-        rates = pooled["Hit Rate %"].to_numpy()
-        errors = pooled["CI"].to_numpy()
-        colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
-        
-        x = np.arange(len(races))
-        
-        # Create bar chart
-        bars = ax.bar(x, np.nan_to_num(rates, nan=0.0), color=colors, alpha=0.85, edgecolor='none')
-
-        # Add error bars
-        for i, (rate, err, n) in enumerate(zip(rates, errors, pooled["Search Count"])):
-            if np.isfinite(rate) and n > 0:
-                ax.errorbar(i, rate, yerr=err, fmt='none',
-                           ecolor='black', alpha=0.5, capsize=5, capthick=2, linewidth=2)
-        
-        # Set y-axis limits with headroom
-        max_y = np.nanmax(rates + errors)
-        if np.isfinite(max_y):
-            ax.set_ylim(0, max_y * 1.15)
-
-        # Add value labels on top of bars
-        label_offset = max_y * 0.03 if np.isfinite(max_y) else 0.5
-
-        for i, (rate, err, n) in enumerate(zip(rates, errors, pooled["Hit Count"])):
-            if np.isfinite(rate) and n > 0:
-                ax.text(i, rate + err + label_offset,
-                    f'{rate:.1f}%\n(n={int(n):,})',
-                    ha='center', va='bottom', fontsize=9, fontweight='bold')
-
-        # Format plot
-        ax.set_xlabel("Perceived Race", fontsize=11, fontweight='bold')
-        ax.set_ylabel("Hit Rate (%)", fontsize=11, fontweight='bold')
-        ax.set_title(f"{reason}", fontsize=12, fontweight='bold', pad=10)
-        ax.set_xticks(x)
-        ax.set_xticklabels(races, rotation=0, ha='center', fontsize=10)
-        ax.grid(axis='y', alpha=0.3, linestyle=':', linewidth=0.5)
-        ax.set_axisbelow(True)
-    
-    fig.suptitle('Contraband Hit Rates by Reason for Contact and Race (2022-2024 Pooled)', 
-                fontsize=16, fontweight='bold', y=0.995)
-    
-    plt.tight_layout(rect=[0, 0.03, 1, 0.99])
-    return fig

@@ -1389,3 +1389,194 @@ def export_figure_to_pdf(fig, fig_name):
     plt.close(fig)
 
     print(f"Saved: {fig_name}.pdf")
+
+
+
+def visualize_search_rates_by_reason(policing_by_reason):
+    """
+    Create a 2x2 grid visualization of pooled (2022-2024) search rates by reason for contact.
+    Uses bar charts with consistent racial ordering.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(20, 14))
+    axes = axes.flatten()
+    
+    # Define consistent race order
+    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
+    
+    for idx, (reason, rates_df) in enumerate(policing_by_reason.items()):
+        ax = axes[idx]
+        
+        # Filter out "Other" race category
+        rates_df_filtered = rates_df[rates_df["Perceived Race"] != "Other"].copy()
+        
+        # Pool across all years (2022-2024)
+        pooled = (
+            rates_df_filtered.groupby("Perceived Race", as_index=False)
+            .agg({
+                "Stop Count": "sum",
+                "Search Count": "sum"
+            })
+        )
+        
+        # Calculate pooled search rate and SE
+        pooled["Search Rate"] = pooled["Search Count"] / pooled["Stop Count"]
+        pooled["Search Rate SE"] = np.sqrt(
+            pooled["Search Rate"] * (1 - pooled["Search Rate"]) / pooled["Stop Count"]
+        )
+        
+        # Apply race ordering
+        pooled["Perceived Race"] = pd.Categorical(
+            pooled["Perceived Race"], 
+            categories=race_order, 
+            ordered=True
+        )
+        pooled = pooled.sort_values("Perceived Race")
+        
+        # Convert to percentage
+        pooled["Search Rate %"] = pooled["Search Rate"] * 100
+        pooled["SE %"] = pooled["Search Rate SE"] * 100
+        pooled["CI"] = pooled["SE %"] * 1.96
+        
+        # Prepare data for plotting
+        races = pooled["Perceived Race"].astype(str).tolist()
+        rates = pooled["Search Rate %"].to_numpy()
+        errors = pooled["CI"].to_numpy()
+        colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
+        
+        x = np.arange(len(races))
+        
+        # Create bar chart
+        bars = ax.bar(x, rates, color=colors, alpha=0.85, edgecolor='none')
+        
+        # Add error bars
+        ax.errorbar(x, rates, yerr=errors, fmt='none', 
+                   ecolor='black', alpha=0.5, capsize=5, capthick=2, linewidth=2)
+        
+        # Set y-axis limits with headroom
+        max_y = np.nanmax(rates + errors)
+        if np.isfinite(max_y):
+            ax.set_ylim(0, max_y * 1.15)
+
+        # Add value labels on top of bars
+        label_offset = max_y * 0.03 if np.isfinite(max_y) else 0.5
+
+        for i, (rate, err, n) in enumerate(zip(rates, errors, pooled["Search Count"])):
+            if np.isfinite(rate):
+                ax.text(i, rate + err + label_offset,
+                    f'{rate:.1f}%\n(n={int(n):,})',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
+        
+        # Format plot
+        ax.set_xlabel("Perceived Race", fontsize=11, fontweight='bold')
+        ax.set_ylabel("Search Rate (%)", fontsize=11, fontweight='bold')
+        ax.set_title(f"{reason}", fontsize=12, fontweight='bold', pad=10)
+        ax.set_xticks(x)
+        ax.set_xticklabels(races, rotation=0, ha='center', fontsize=10)
+        ax.grid(axis='y', alpha=0.3, linestyle=':', linewidth=0.5)
+        ax.set_axisbelow(True)
+    
+    fig.suptitle('Conditional Search Rates by Reason for Contact and Race (2022-2024 Pooled)', 
+                fontsize=16, fontweight='bold', y=0.995)
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.99])
+    return fig
+
+
+
+def visualize_hit_rates_by_reason(policing_by_reason):
+    """
+    Create a 2x2 grid visualization of pooled (2022-2024) hit rates by reason for contact.
+    Uses bar charts with consistent racial ordering.
+    
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(20, 14))
+    axes = axes.flatten()
+    
+    # Define consistent race order
+    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
+    
+    for idx, (reason, rates_df) in enumerate(policing_by_reason.items()):
+        ax = axes[idx]
+        
+        # Filter out "Other" race category
+        rates_df_filtered = rates_df[rates_df["Perceived Race"] != "Other"].copy()
+        
+        # Pool across all years (2022-2024)
+        pooled = (
+            rates_df_filtered.groupby("Perceived Race", as_index=False)
+            .agg({
+                "Search Count": "sum",
+                "Hit Count": "sum"
+            })
+        )
+        
+        # Calculate pooled hit rate and SE
+        pooled["Hit Rate"] = np.where(
+            pooled["Search Count"] > 0,
+            pooled["Hit Count"] / pooled["Search Count"],
+            np.nan
+        )
+        pooled["Hit Rate SE"] = np.where(
+            pooled["Search Count"] > 0,
+            np.sqrt(pooled["Hit Rate"] * (1 - pooled["Hit Rate"]) / pooled["Search Count"]),
+            np.nan
+        )
+        
+        # Apply race ordering
+        pooled["Perceived Race"] = pd.Categorical(
+            pooled["Perceived Race"], 
+            categories=race_order, 
+            ordered=True
+        )
+        pooled = pooled.sort_values("Perceived Race")
+        
+        # Convert to percentage
+        pooled["Hit Rate %"] = pooled["Hit Rate"] * 100
+        pooled["SE %"] = pooled["Hit Rate SE"] * 100
+        pooled["CI"] = pooled["SE %"] * 1.96
+        
+        # Prepare data for plotting
+        races = pooled["Perceived Race"].astype(str).tolist()
+        rates = pooled["Hit Rate %"].to_numpy()
+        errors = pooled["CI"].to_numpy()
+        colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
+        
+        x = np.arange(len(races))
+        
+        # Create bar chart
+        bars = ax.bar(x, np.nan_to_num(rates, nan=0.0), color=colors, alpha=0.85, edgecolor='none')
+
+        # Add error bars
+        for i, (rate, err, n) in enumerate(zip(rates, errors, pooled["Search Count"])):
+            if np.isfinite(rate) and n > 0:
+                ax.errorbar(i, rate, yerr=err, fmt='none',
+                           ecolor='black', alpha=0.5, capsize=5, capthick=2, linewidth=2)
+        
+        # Set y-axis limits with headroom
+        max_y = np.nanmax(rates + errors)
+        if np.isfinite(max_y):
+            ax.set_ylim(0, max_y * 1.15)
+
+        # Add value labels on top of bars
+        label_offset = max_y * 0.03 if np.isfinite(max_y) else 0.5
+
+        for i, (rate, err, n) in enumerate(zip(rates, errors, pooled["Hit Count"])):
+            if np.isfinite(rate) and n > 0:
+                ax.text(i, rate + err + label_offset,
+                    f'{rate:.1f}%\n(n={int(n):,})',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+        # Format plot
+        ax.set_xlabel("Perceived Race", fontsize=11, fontweight='bold')
+        ax.set_ylabel("Hit Rate (%)", fontsize=11, fontweight='bold')
+        ax.set_title(f"{reason}", fontsize=12, fontweight='bold', pad=10)
+        ax.set_xticks(x)
+        ax.set_xticklabels(races, rotation=0, ha='center', fontsize=10)
+        ax.grid(axis='y', alpha=0.3, linestyle=':', linewidth=0.5)
+        ax.set_axisbelow(True)
+    
+    fig.suptitle('Contraband Hit Rates by Reason for Contact and Race (2022-2024 Pooled)', 
+                fontsize=16, fontweight='bold', y=0.995)
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.99])
+    return fig

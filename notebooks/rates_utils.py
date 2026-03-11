@@ -353,3 +353,26 @@ def get_filtered_wobbler_categories(df):
     )
 
     return keep_categories
+
+
+
+def policing_rates_by_reason_for_contact(df, census):
+    """
+    Calculate policing rates stratified by reason for contact.
+    """
+    reason_types = [
+        "Moving violation",
+        "Equipment violation",
+        "Non-moving violation",
+        "Suspect criminal activity"
+    ]
+    
+    policing_by_reason = {}
+    
+    for reason in reason_types:
+        subset = df[df["reason_for_contact"] == reason].copy()
+        if len(subset) > 0:
+            rates = policing_rates(subset, census)
+            policing_by_reason[reason] = rates
+    
+    return policing_by_reason

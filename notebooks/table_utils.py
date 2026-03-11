@@ -1126,3 +1126,179 @@ def export_wobbler_tables_to_latex(wobbler_table, wobbler_category_table):
     print(" - wobbler_by_category.tex")
 
     return overall_latex, by_cat_latex
+
+
+
+def create_reason_for_contact_table(policing_by_reason):
+    """
+    Create a comprehensive table with stop reason, race, counts, and rates with 95% CIs.
+    Each reason for contact is shown only once with race categories as rows beneath it.
+    
+    Parameters
+    ----------
+    policing_by_reason : dict
+        Dictionary mapping reason_for_contact -> rates DataFrame
+        (output from rates_utils.policing_rates_by_reason_for_contact)
+    
+    Returns
+    -------
+    DataFrame
+        Table with columns: Reason for Contact, Perceived Race, Stops, Searches, 
+        Search Rate (%), Hit Rate (%)
+    """
+    import numpy as np
+    
+    rows = []
+    
+    # Define reason order
+    reason_order = [
+        "Moving violation",
+        "Equipment violation",
+        "Non-moving violation",
+        "Suspect criminal activity"
+    ]
+    
+    for reason in reason_order:
+        if reason not in policing_by_reason:
+            continue
+            
+        rates_df = policing_by_reason[reason]
+        
+        # Pool across all years
+        pooled = (
+            rates_df.groupby("Perceived Race", as_index=False)
+            .agg({
+                "Stop Count": "sum",
+                "Search Count": "sum",
+                "Hit Count": "sum"
+            })
+        )
+        
+        # Calculate pooled rates and standard errors
+        pooled["Search Rate"] = pooled["Search Count"] / pooled["Stop Count"]
+        pooled["Search Rate SE"] = np.sqrt(
+            pooled["Search Rate"] * (1 - pooled["Search Rate"]) / pooled["Stop Count"]
+        )
+        
+        pooled["Hit Rate"] = np.where(
+            pooled["Search Count"] > 0,
+            pooled["Hit Count"] / pooled["Search Count"],
+            np.nan
+        )
+        pooled["Hit Rate SE"] = np.where(
+            pooled["Search Count"] > 0,
+            np.sqrt(pooled["Hit Rate"] * (1 - pooled["Hit Rate"]) / pooled["Search Count"]),
+            np.nan
+        )
+        
+        # Apply race ordering (including "Other")
+        race_order_with_other = ["Black/African American", "Hispanic/Latino", "White", "Asian", "Other"]
+        pooled["Perceived Race"] = pd.Categorical(
+            pooled["Perceived Race"], 
+            categories=race_order_with_other, 
+            ordered=True
+        )
+        pooled = pooled.sort_values("Perceived Race")
+        
+        # Convert to percentages and format with CIs
+        for idx, row in pooled.iterrows():
+            search_rate_pct = row["Search Rate"] * 100
+            search_se_pct = row["Search Rate SE"] * 100
+            search_ci = 1.96 * search_se_pct
+            
+            hit_rate_pct = row["Hit Rate"] * 100
+            hit_se_pct = row["Hit Rate SE"] * 100
+            hit_ci = 1.96 * hit_se_pct
+            
+            # Only show reason name in the first row for each reason
+            reason_display = reason if idx == pooled.index[0] else ""
+            
+            rows.append({
+                "Reason for Contact": reason_display,
+                "Perceived Race": row["Perceived Race"],
+                "Stops": int(row["Stop Count"]),
+                "Searches": int(row["Search Count"]),
+                "Search Rate (%)": f"{search_rate_pct:.2f} (±{search_ci:.2f})",
+                "Hit Rate (%)": f"{hit_rate_pct:.2f} (±{hit_ci:.2f})" if np.isfinite(hit_rate_pct) else "—"
+            })
+    
+    result = pd.DataFrame(rows)
+    
+    return result
+
+
+
+def export_reason_for_contact_table_to_latex(table_df):
+    """
+    Export reason-for-contact table to LaTeX format.
+    
+    Parameters
+    ----------
+    table_df : DataFrame
+        Output from create_reason_for_contact_table()
+    
+    Returns
+    -------
+    str
+        LaTeX table code
+    """
+    import os
+    
+    os.makedirs("../output/tables", exist_ok=True)
+    
+    df = table_df.copy()
+    
+    # Build LaTeX table
+    latex = []
+    latex.append(r"\begin{table}[htbp]")
+    latex.append(r"\centering")
+    latex.append(r"\caption{Policing Outcomes by Reason for Contact and Race (2022-2024 Pooled)}")
+    latex.append(r"\label{tab:reason_for_contact}")
+    latex.append(r"\begin{tabular}{ll rr ll}")
+    latex.append(r"\toprule")
+    latex.append(r"Reason for Contact & Perceived Race & Stops & Searches & Search Rate (\%) & Hit Rate (\%) \\")
+    latex.append(r"\midrule")
+    
+    # Add data rows with separators between reason groups
+    prev_reason = None
+    for idx, row in df.iterrows():
+        reason = row["Reason for Contact"]
+        race = row["Perceived Race"]
+        stops = f"{row['Stops']:,}"
+        searches = f"{row['Searches']:,}"
+        search_rate = row["Search Rate (%)"]
+        hit_rate = row["Hit Rate (%)"]
+        
+        # Add thin line separator before new reason group (but not before first group)
+        if reason and prev_reason is not None:
+            latex.append(r"\cmidrule(lr){1-6}")
+        
+        # Format the line
+        if reason:  # First row of a reason group
+            latex.append(
+                f"{reason} & {race} & {stops} & {searches} & {search_rate} & {hit_rate} \\\\"
+            )
+            prev_reason = reason
+        else:  # Subsequent rows in the same reason group
+            latex.append(
+                f" & {race} & {stops} & {searches} & {search_rate} & {hit_rate} \\\\"
+            )
+    
+    latex.append(r"\bottomrule")
+    latex.append(r"\end{tabular}")
+    latex.append(r"\smallskip")
+    latex.append(
+        r"\parbox{\textwidth}{\footnotesize \textit{Note:} Data pooled across 2022--2024. "
+        r"Search rates represent the proportion of stops that resulted in a discretionary search. "
+        r"Hit rates represent the proportion of discretionary searches that resulted in contraband "
+        r"being found. 95\% confidence intervals shown in parentheses ($\pm 1.96$ SE).}"
+    )
+    latex.append(r"\end{table}")
+    
+    # Write to file
+    latex_str = "\n".join(latex)
+    with open("../output/tables/reason_for_contact.tex", "w", encoding="utf-8") as f:
+        f.write(latex_str)
+    
+    print("Table exported: reason_for_contact.tex")
+    return latex_str

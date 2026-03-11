@@ -81,6 +81,100 @@ def policing_rates(df, census):
 
 
 
+def summarize_agency_black_white_hit_rates(df):
+    """
+    Agency-level White vs Black hit-rate comparison.
+    Hit rate is calculated among searched cases only.
+    
+    Filters out agencies with fewer than 5 searches for either White or 
+    Black/African American individuals to ensure more stable rate estimates.
+    """
+
+    tmp = df.copy()
+
+    # Keep only searched cases
+    tmp = tmp[tmp["disc_search"]].copy()
+
+    # Keep only White and Black rows
+    tmp = tmp[tmp["race_std"].isin(["White", "Black/African American"])].copy()
+
+    # Summarize by agency x race
+    summary = (
+        tmp.groupby(["agency_name", "race_std"], as_index=False)
+        .agg(
+            Search_Count=("disc_hit", "size"),
+            Hit_Count=("disc_hit", "sum"),
+        )
+    )
+
+    summary["Hit_Rate"] = summary["Hit_Count"] / summary["Search_Count"]
+
+    # Split into White and Black summaries, then merge
+    white = (
+        summary[summary["race_std"] == "White"]
+        [["agency_name", "Search_Count", "Hit_Count", "Hit_Rate"]]
+        .rename(columns={
+            "Search_Count": "White_Search_Count",
+            "Hit_Count": "White_Hit_Count",
+            "Hit_Rate": "White_Hit_Rate",
+        })
+    )
+
+    black = (
+        summary[summary["race_std"] == "Black/African American"]
+        [["agency_name", "Search_Count", "Hit_Count", "Hit_Rate"]]
+        .rename(columns={
+            "Search_Count": "Black_Search_Count",
+            "Hit_Count": "Black_Hit_Count",
+            "Hit_Rate": "Black_Hit_Rate",
+        })
+    )
+
+    out = white.merge(black, on="agency_name", how="inner")
+
+    # Filter out agencies with fewer than 5 searches for either group
+    out = out[
+        (out["White_Search_Count"] >= 5) & 
+        (out["Black_Search_Count"] >= 5)
+    ].copy()
+
+    out["Avg_Search_Count"] = (
+        out["White_Search_Count"] + out["Black_Search_Count"]
+    ) / 2
+
+    # Rename and properly capitalize agency names
+    agency_name_map = {
+        "CA ST UNIV PD-FULLERTON": "Cal State Fullerton PD",
+        "UC-IRVINE PD": "UC Irvine PD",
+        "ORANGE CO SO": "Orange County Sheriff's Office"
+    }
+    
+    out["agency_name"] = out["agency_name"].replace(agency_name_map)
+    
+    # Capitalize agency names: title case for words, but keep PD and SO in caps
+    def format_agency_name(name):
+        # Skip if already manually mapped
+        if name in agency_name_map.values():
+            return name
+        
+        # Title case the name
+        words = name.split()
+        formatted_words = []
+        for word in words:
+            # Keep PD, SO, CO in all caps
+            if word.upper() in ['PD', 'SO', 'CO']:
+                formatted_words.append(word.upper())
+            else:
+                formatted_words.append(word.title())
+        
+        return ' '.join(formatted_words)
+    
+    out["agency_name"] = out["agency_name"].apply(format_agency_name)
+
+    return out
+
+
+
 def policing_rates_sensitivity(df, census, sensitivity_type):
     """
     Build a race × year policing summary table for sensitivity analysis.

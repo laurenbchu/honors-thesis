@@ -3,6 +3,7 @@
 # -------------------------------------------
 
 import pandas as pd
+import numpy as np
 
 def load_census(county_fips):
     """

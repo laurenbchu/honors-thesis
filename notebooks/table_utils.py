@@ -56,6 +56,58 @@ def visualization_setup(df, race_col):
 # Table functions
 # --------------------------------------------
 
+def agency_black_white_hit_rate_table(df):
+    """
+    Create a publication-ready table from agency-level Black vs White hit rate comparison.
+    
+    Parameters
+    ----------
+    df : DataFrame
+        Output from rates_utils.summarize_agency_black_white_hit_rates()
+        Expected columns: agency_name, White_Search_Count, White_Hit_Count, White_Hit_Rate,
+                         Black_Search_Count, Black_Hit_Count, Black_Hit_Rate, Avg_Search_Count
+    
+    Returns
+    -------
+    DataFrame
+        Formatted table with columns: Agency Name, White Search Count, White Hit Count,
+        White Hit Rate, Black Search Count, Black Hit Count, Black Hit Rate
+    """
+    
+    result = df.copy()
+    
+    # Select and rename columns
+    result = result[[
+        "agency_name",
+        "White_Search_Count",
+        "White_Hit_Count", 
+        "White_Hit_Rate",
+        "Black_Search_Count",
+        "Black_Hit_Count",
+        "Black_Hit_Rate"
+    ]].copy()
+    
+    result.columns = [
+        "Agency Name",
+        "White Search Count",
+        "White Hit Count",
+        "White Hit Rate",
+        "Black Search Count", 
+        "Black Hit Count",
+        "Black Hit Rate"
+    ]
+    
+    # Format hit rates as percentages with 2 decimal places
+    result["White Hit Rate"] = (result["White Hit Rate"] * 100).round(2)
+    result["Black Hit Rate"] = (result["Black Hit Rate"] * 100).round(2)
+    
+    # Sort by agency name
+    result = result.sort_values("Agency Name").reset_index(drop=True)
+    
+    return result
+
+
+
 def enhancement_rate_combined_table(enhancement_by_primary):
     """
     Combined enhancement-rate table:
@@ -419,7 +471,7 @@ def export_stops_searches_to_latex(summary_df):
     
     # Build LaTeX table
     latex = []
-    latex.append(r"\begin{table}[H]")
+    latex.append(r"\begin{table}[htbp]")
     latex.append(r"\centering")
     latex.append(r"\caption{Policing: Stops and Searches (per 1,000 residents)}")
     latex.append(r"\label{tab:stops_searches}")
@@ -507,7 +559,7 @@ def export_searches_hits_to_latex(summary_df):
     
     # Build LaTeX table
     latex = []
-    latex.append(r"\begin{table}[H]")
+    latex.append(r"\begin{table}[htbp]")
     latex.append(r"\centering")
     latex.append(r"\caption{Policing: Search Rates and Hit Rates by Race and Year}")
     latex.append(r"\label{tab:search_hit_rates}")
@@ -542,6 +594,83 @@ def export_searches_hits_to_latex(summary_df):
         f.write(latex_str)
     
     print("Table exported: searches_hits.tex")
+    return latex_str
+
+
+
+def export_agency_hit_rates_to_latex(agency_hit_df):
+    """
+    Export agency-level Black vs White hit rate comparison table to LaTeX.
+    """
+    
+    os.makedirs("../output/tables", exist_ok=True)
+    
+    # Work with the original data to calculate standard errors
+    df = agency_hit_df.copy()
+    
+    # Calculate standard errors for hit rates using binomial proportion formula: SE = sqrt(p(1-p)/n)
+    df["White_Hit_Rate_SE"] = np.sqrt(
+        df["White_Hit_Rate"] * (1 - df["White_Hit_Rate"]) / df["White_Search_Count"]
+    )
+    
+    df["Black_Hit_Rate_SE"] = np.sqrt(
+        df["Black_Hit_Rate"] * (1 - df["Black_Hit_Rate"]) / df["Black_Search_Count"]
+    )
+    
+    # Sort by agency name
+    df = df.sort_values("agency_name").reset_index(drop=True)
+    
+    # Build LaTeX table manually for better control
+    latex = []
+    latex.append(r"\begin{table}[htbp]")
+    latex.append(r"\centering")
+    latex.append(r"\caption{Agency-Level Comparison: White vs. Black/African American Hit Rates}")
+    latex.append(r"\label{tab:agency_hit_rates}")
+    latex.append(r"\begin{tabular}{l rr rr}")
+    latex.append(r"\toprule")
+    latex.append(r" & \multicolumn{2}{c}{White} & \multicolumn{2}{c}{Black/African American} \\")
+    latex.append(r"\cmidrule(lr){2-3} \cmidrule(lr){4-5}")
+    latex.append(r"Agency & Searches & Hit Rate (\%) & Searches & Hit Rate (\%) \\")
+    latex.append(r"\midrule")
+    
+    # Add data rows with hit rates formatted with 95% CI
+    for _, row in df.iterrows():
+        agency = row["agency_name"]
+        
+        w_searches = int(row["White_Search_Count"])
+        w_rate = row["White_Hit_Rate"] * 100
+        w_se = row["White_Hit_Rate_SE"] * 100
+        w_ci = 1.96 * w_se
+        
+        b_searches = int(row["Black_Search_Count"])
+        b_rate = row["Black_Hit_Rate"] * 100
+        b_se = row["Black_Hit_Rate_SE"] * 100
+        b_ci = 1.96 * b_se
+        
+        latex.append(
+            f"{agency} & {w_searches:,} & "
+            f"{w_rate:.1f} ({{\\scriptsize $\\pm${w_ci:.1f}}}) & "
+            f"{b_searches:,} & "
+            f"{b_rate:.1f} ({{\\scriptsize $\\pm${b_ci:.1f}}}) \\\\"
+        )
+    
+    latex.append(r"\bottomrule")
+    latex.append(r"\end{tabular}")
+    latex.append(r"\smallskip")
+    latex.append(
+        r"\parbox{\textwidth}{\footnotesize \textit{Note:} Hit rates represent the proportion "
+        r"of searches that resulted in contraband being found, with 95\% confidence intervals "
+        r"shown in parentheses ($\pm 1.96$ SE). Only agencies with at least 5 searches for both "
+        r"White and Black/African American individuals are included.}"
+    )
+    latex.append(r"\end{table}")
+    
+    # Write to file
+    latex_str = "\n".join(latex)
+    with open("../output/tables/agency_hits.tex", "w", encoding="utf-8") as f:
+        f.write(latex_str)
+    
+    print("Table exported: agency_hits.tex")
     return latex_str
 
 
@@ -596,7 +725,7 @@ def export_combined_sensitivity_to_latex(
     multiperson_map = build_map(policing_analysis_multiperson)
 
     latex = []
-    latex.append(r"\begin{table}[H]")
+    latex.append(r"\begin{table}[htbp]")
     latex.append(r"\centering")
     latex.append(r"\caption{Sensitivity Analysis: Search and Hit Rates Under Alternative Definitions (2024)}")
     latex.append(r"\label{tab:sensitivity_combined}")

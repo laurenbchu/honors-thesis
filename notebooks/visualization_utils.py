@@ -304,6 +304,193 @@ def visualize_policing(policing_analysis):
 
 
 
+def plot_agency_black_white_hit_rates(agency_hit_df):
+    """
+    Create a publication-ready scatter plot comparing White and Black hit rates by agency.
+    
+    Points above the diagonal (higher Black hit rate) are colored green.
+    Points below the diagonal (higher White hit rate) are colored red.
+    Uses smart label positioning to avoid overlap.
+    
+    Parameters
+    ----------
+    agency_hit_df : DataFrame
+        Output from rates_utils.summarize_agency_black_white_hit_rates()
+        Expected columns: agency_name, White_Hit_Rate, Black_Hit_Rate, Avg_Search_Count
+    
+    Returns
+    -------
+    matplotlib.figure.Figure
+        Scatter plot with color-coded points and non-overlapping labels
+    """
+    d = agency_hit_df.copy()
+
+    x = d["White_Hit_Rate"] * 100
+    y = d["Black_Hit_Rate"] * 100
+
+    # Scale point sizes based on average search count
+    sizes = 100 + 3.5 * np.sqrt(d["Avg_Search_Count"])
+
+    # Determine colors based on position relative to diagonal
+    # Green if Black hit rate > White hit rate (above diagonal)
+    # Red if White hit rate > Black hit rate (below diagonal)
+    colors = []
+    for xi, yi in zip(x, y):
+        if yi > xi:
+            colors.append("#009E73")  # Green (higher Black hit rate)
+        else:
+            colors.append("#D55E00")  # Red/Orange (higher White hit rate)
+
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    # Create scatter plot with color-coding
+    scatter = ax.scatter(
+        x,
+        y,
+        s=sizes,
+        alpha=0.7,
+        c=colors,
+        edgecolor="white",
+        linewidth=1.5,
+        zorder=3
+    )
+
+    # Calculate axis limits with some padding
+    max_xy = np.nanmax(np.concatenate([x.to_numpy(), y.to_numpy()]))
+    min_xy = np.nanmin(np.concatenate([x.to_numpy(), y.to_numpy()]))
+    max_val = max(5, max_xy + 5)
+    min_val = max(0, min_xy - 2)
+
+    # Add 45-degree reference line (parity line)
+    ax.plot(
+        [min_val, max_val], 
+        [min_val, max_val], 
+        linestyle="--", 
+        linewidth=2.5, 
+        color="gray", 
+        alpha=0.5,
+        label="Equal Hit Rates",
+        zorder=2
+    )
+
+    # Try to use adjustText for smart label positioning, fall back to basic if not available
+    try:
+        from adjustText import adjust_text
+        
+        texts = []
+        for _, row in d.iterrows():
+            xi = row["White_Hit_Rate"] * 100
+            yi = row["Black_Hit_Rate"] * 100
+            
+            text = ax.text(
+                xi, yi,
+                row["agency_name"],
+                fontsize=9,
+                alpha=0.9,
+                zorder=4,
+                ha='center',
+                va='center'
+            )
+            texts.append(text)
+        
+        # Adjust text positions to avoid overlap
+        adjust_text(
+            texts,
+            x=x.values,
+            y=y.values,
+            ax=ax,
+            arrowprops=dict(
+                arrowstyle='-',
+                color='gray',
+                alpha=0.5,
+                lw=0.5
+            ),
+            expand_points=(1.5, 1.5),
+            expand_text=(1.2, 1.2),
+            force_points=(0.3, 0.3),
+            force_text=(0.5, 0.5),
+            lim=500
+        )
+        
+    except ImportError:
+        # Fallback: manual positioning with offset based on position
+        from matplotlib.patheffects import withStroke
+        
+        for _, row in d.iterrows():
+            xi = row["White_Hit_Rate"] * 100
+            yi = row["Black_Hit_Rate"] * 100
+            
+            # Smart offset based on quadrant relative to center
+            center_x = (min_val + max_val) / 2
+            center_y = (min_val + max_val) / 2
+            
+            if xi > center_x and yi > center_y:
+                xytext = (8, 8)
+            elif xi > center_x and yi <= center_y:
+                xytext = (8, -8)
+            elif xi <= center_x and yi > center_y:
+                xytext = (-8, 8)
+            else:
+                xytext = (-8, -8)
+            
+            text = ax.annotate(
+                row["agency_name"],
+                xy=(xi, yi),
+                xytext=xytext,
+                textcoords="offset points",
+                fontsize=8,
+                alpha=0.85,
+                zorder=4,
+                ha='center'
+            )
+            # Add white outline to text for better visibility
+            text.set_path_effects([
+                withStroke(linewidth=2, foreground="white", alpha=0.8)
+            ])
+
+    # Format axes
+    ax.set_xlabel("White Hit Rate (%)", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Black/African American Hit Rate (%)", fontsize=13, fontweight="bold")
+    ax.set_title(
+        "Agency-Level Comparison: White vs. Black Hit Rates\n(Outcome Test for Searches)",
+        fontsize=15,
+        fontweight="bold",
+        pad=20
+    )
+    
+    # Improve grid
+    ax.grid(alpha=0.3, linestyle=":", linewidth=0.5, zorder=1)
+    ax.set_axisbelow(True)
+    
+    # Set axis limits
+    ax.set_xlim(min_val, max_val)
+    ax.set_ylim(min_val, max_val)
+    
+    # Ensure aspect ratio is equal (square plot)
+    ax.set_aspect('equal', adjustable='box')
+    
+    # Create custom legend for colors
+    from matplotlib.patches import Patch
+    legend_elements = [
+        plt.Line2D([0], [0], linestyle='--', linewidth=2.5, color='gray', alpha=0.5, label='Equal Hit Rates'),
+        Patch(facecolor='#009E73', alpha=0.7, edgecolor='white', linewidth=1.5, label='Black Hit Rate > White'),
+        Patch(facecolor='#D55E00', alpha=0.7, edgecolor='white', linewidth=1.5, label='White Hit Rate > Black')
+    ]
+    
+    ax.legend(
+        handles=legend_elements,
+        fontsize=10, 
+        frameon=True, 
+        fancybox=True, 
+        shadow=False,
+        loc='upper left'
+    )
+
+    plt.tight_layout()
+    return fig
+
+
+
 def create_combined_sensitivity_visualization(
     baseline_df,
     mixed_df,

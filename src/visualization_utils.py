@@ -47,7 +47,25 @@ def visualize_policing(policing_analysis):
     df = policing_analysis.copy()
     race_col = "Perceived Race"
     
-    from table_utils import visualization_setup
+    def visualization_setup(df, race_col):
+        """
+        Enforce a consistent race order and sort for plotting.
+        race_col should be either:
+        - "Perceived Race" (policing)
+        - "Canonical Race" (prosecution)
+        """
+        out = df.copy()
+
+        race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
+
+        if race_col in out.columns:
+            out[race_col] = pd.Categorical(out[race_col], categories=race_order, ordered=True)
+
+        if "Year" in out.columns and race_col in out.columns:
+            out = out.sort_values(["Year", race_col])
+
+        return out
+
     df = visualization_setup(df, race_col=race_col)
     
     # Use centralized color map

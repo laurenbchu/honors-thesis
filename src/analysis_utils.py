@@ -559,10 +559,6 @@ def enhancement_rates_by_primary_severity(df):
 
     df = df.copy()
 
-
-
-    from data_utils import assign_primary_charge_by_severity
-
     # Assign primary charge per case
     primary = assign_primary_charge_by_severity(df)
 

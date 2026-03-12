@@ -343,7 +343,7 @@ def wobbler_felony_rate_tables(df):
     For the charge-category table, categories are excluded if they:
       - have fewer than 500 total wobblers across all races,
       - are the "Other" charge category, or
-      - have an overall felony filing rate below 5% when aggregated across all races.
+      - have an overall felony filing rate below 10% when aggregated across all races.
     """
 
     # Filter to wobbler charges only
@@ -430,7 +430,7 @@ def wobbler_felony_rate_tables(df):
     # Filter charge categories:
     # - exclude "Other"
     # - exclude categories with <500 total wobblers across all races
-    # - exclude categories with overall felony rate <5% across all races
+    # - exclude categories with overall felony rate <10% across all races
     category_stats = (
         wobbler_category_table
         .groupby("charge_category", as_index=False)
@@ -447,7 +447,7 @@ def wobbler_felony_rate_tables(df):
     keep_categories = category_stats.loc[
         (category_stats["charge_category"] != "Other") &
         (category_stats["Total"] >= 500) &
-        (category_stats["Overall Felony Rate"] >= 0.05),
+        (category_stats["Overall Felony Rate"] >= 0.1),
         "charge_category"
     ]
 

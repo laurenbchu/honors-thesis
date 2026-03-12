@@ -1,14 +1,14 @@
 # Orange County Policing and Prosecution Analysis
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/laurenbchu/honors-thesis/main)
 
-This repository contains the code, cleaned data inputs, and exported thesis outputs for my analysis of racial disparities in policing and prosecution in Orange County, California.
+This repository contains the code, processed data inputs, and exported thesis outputs for my analysis of racial disparities in policing and prosecution in Orange County, California.
 
 The project has two main stages:
 
-1. **RIPA Cleaning**: Download and harmonize Orange County RIPA stop data for 2022–2024 and save a cleaned analysis file.
-2. **Analysis**: Combine the cleaned policing data, cleaned prosecution data, and Census population data to generate all final figures and LaTeX tables used in the thesis.
+1. **RIPA Cleaning**: Download and harmonize Orange County RIPA stop data for 2022–2024 and save a cleaned policing file.
+2. **Analysis**: Combine the cleaned policing data, cleaned prosecution data, and 2020 Census population denominators to generate the figures and LaTeX tables used in the thesis.
 
-## Repository structure
+## Repository Structure
 
 ```text
 .
@@ -40,21 +40,40 @@ The project has two main stages:
     └── visualization_utils.py
 ```
 
-## Project workflow
+## Quick Start
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/laurenbchu/honors-thesis.git
+cd honors-thesis
+pip install -r requirements.txt
+```
+
+Run the notebooks in this order:
+
+1. `notebooks/01_ripa_cleaning.ipynb`
+2. `notebooks/02_analysis.ipynb`
+
+For full setup notes and reproduction details, see [`docs/reproducibility.md`](docs/reproducibility.md).
+
+## Project Workflow
 
 ### 1. `notebooks/01_ripa_cleaning.ipynb`
-This notebook downloads Orange County RIPA stop data for 2022, 2023, and 2024, harmonizes the 2024 schema to match prior years, creates derived analysis variables, and exports a cleaned policing dataset to:
+
+This notebook downloads Orange County RIPA stop data for 2022, 2023, and 2024 from the California DOJ/OpenJustice portal, harmonizes the 2024 schema to match earlier years, creates derived analysis variables, and exports a cleaned policing dataset to:
 
 ```text
 data/processed/cleaned_orange_ripa_2022_2024.csv
 ```
 
 ### 2. `notebooks/02_analysis.ipynb`
+
 This notebook loads:
 
 - the cleaned RIPA policing file generated in step 1
-- the cleaned prosecution file in `data/processed/cleaned_orange_aclu_2021_2023.csv`
-- 2020 Decennial Census PL Table P2 population data from the Census API
+- the cleaned Orange County prosecution dataset for 2021–2023
+- 2020 Decennial Census PL Table P2 population data from the U.S. Census API
 
 It then produces the full thesis analysis, including:
 
@@ -65,23 +84,27 @@ It then produces the full thesis analysis, including:
 - prosecution enhancement analyses
 - wobbler felony-filing analyses
 
-## Data sources
+## Data Sources
 
-### Policing data
+### Policing Data
+
 California DOJ RIPA stop data for Orange County, 2022–2024.
 
-### Prosecution data
-Cleaned Orange County prosecution data:
+### Prosecution Data
+
+Cleaned Orange County prosecution data derived from 2021–2023 RJA records:
 
 ```text
 data/processed/cleaned_orange_aclu_2021_2023.csv
 ```
 
-### Population data
-2020 Decennial Census PL Table P2 data are retrieved at runtime from the U.S. Census API.
+### Population Data
 
-### Source documentation
-Supporting documentation is stored in:
+2020 Decennial Census PL Table P2 population data are retrieved at runtime from the U.S. Census API.
+
+### Source Documentation
+
+Supporting metadata and documentation are stored in:
 
 ```text
 data/metadata/
@@ -89,7 +112,7 @@ data/metadata/
 
 ## Outputs
 
-Running the analysis notebook exports thesis-ready outputs to:
+The repository includes thesis-ready outputs in:
 
 - `output/figures/` for PDF figures
 - `output/tables/` for LaTeX tables
@@ -117,9 +140,11 @@ Expected table files include:
 - `wobbler_overall.tex`
 - `wobbler_by_category.tex`
 
-## Reproducing the analysis
+## Reproducing Exported Outputs
 
-See [`docs/reproducibility.md`](docs/reproducibility.md) for full setup instructions, required inputs, execution order, and notes on reproducibility.
+The analysis notebook contains the helper calls used to export figures and LaTeX tables. In the current version of the notebook, these export lines are left in place but commented out. The committed files in `output/` are the final thesis-ready outputs.
+
+To regenerate exported files, uncomment the relevant export lines in `notebooks/02_analysis.ipynb` and rerun the notebook.
 
 ## Software
 
@@ -131,7 +156,7 @@ Install dependencies with:
 pip install -r requirements.txt
 ```
 
-Typical dependencies include:
+The current environment is based on:
 
 - pandas
 - numpy
@@ -139,14 +164,4 @@ Typical dependencies include:
 - requests
 - openpyxl
 - jupyter
-- notebook
 - adjustText
-
-## Notes
-
-- Internet access is required to download the RIPA source files and query the Census API.
-- The prosecution dataset is included here as a cleaned processed input.
-
-## Citation
-
-If you use this repository, please cite the thesis and this code repository.

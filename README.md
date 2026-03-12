@@ -1,5 +1,6 @@
 # Orange County Policing and Prosecution Analysis
 [![Binder](https://mybinder.org/badge_logo.svg)]([https://mybinder.org/v2/gh/ls88-openscienceconnector/final-project/master](https://mybinder.org/v2/gh/laurenbchu/honors-thesis/main))
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/laurenbchu/honors-thesis/main)
 
 This repository contains the code, cleaned data inputs, and exported thesis outputs for my analysis of racial disparities in policing and prosecution in Orange County, California.
 

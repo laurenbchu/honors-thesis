@@ -1,6 +1,7 @@
-datascience
 pandas
 numpy
 matplotlib
-IPython
-scipy
+requests
+openpyxl
+jupyter
+adjustText

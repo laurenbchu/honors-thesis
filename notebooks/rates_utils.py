@@ -4,6 +4,22 @@
 
 import numpy as np
 
+def _binom_ci(enhanced, n, z=1.96):
+    """
+    Normal-approx binomial CI (Wald), clipped to [0,1].
+    Returns p, se, lo, hi as numpy arrays.
+    """
+    enhanced = np.asarray(enhanced, dtype=float)
+    n = np.asarray(n, dtype=float)
+
+    p = np.where(n > 0, enhanced / n, np.nan)
+    se = np.where(n > 0, np.sqrt(p * (1 - p) / n), np.nan)
+    lo = np.maximum(0, p - z * se)
+    hi = np.minimum(1, p + z * se)
+    return p, se, lo, hi
+
+
+
 def policing_rates(df, census):
     """
     Build a race × year policing summary table for discretionary stops only,
@@ -175,6 +191,29 @@ def summarize_agency_black_white_hit_rates(df):
 
 
 
+def policing_rates_by_reason_for_contact(df, census):
+    """
+    Calculate policing rates stratified by reason for contact.
+    """
+    reason_types = [
+        "Moving violation",
+        "Equipment violation",
+        "Non-moving violation",
+        "Suspect criminal activity"
+    ]
+    
+    policing_by_reason = {}
+    
+    for reason in reason_types:
+        subset = df[df["reason_for_contact"] == reason].copy()
+        if len(subset) > 0:
+            rates = policing_rates(subset, census)
+            policing_by_reason[reason] = rates
+    
+    return policing_by_reason
+
+
+
 def policing_rates_sensitivity(df, census, sensitivity_type):
     """
     Build a race × year policing summary table for sensitivity analysis.
@@ -299,22 +338,6 @@ def enhancement_rates_by_primary_severity(df):
 
 
 
-def _binom_ci(enhanced, n, z=1.96):
-    """
-    Normal-approx binomial CI (Wald), clipped to [0,1].
-    Returns p, se, lo, hi as numpy arrays.
-    """
-    enhanced = np.asarray(enhanced, dtype=float)
-    n = np.asarray(n, dtype=float)
-
-    p = np.where(n > 0, enhanced / n, np.nan)
-    se = np.where(n > 0, np.sqrt(p * (1 - p) / n), np.nan)
-    lo = np.maximum(0, p - z * se)
-    hi = np.minimum(1, p + z * se)
-    return p, se, lo, hi
-
-
-
 def get_filtered_wobbler_categories(df):
     """
     Return charge categories to keep for wobbler analyses.
@@ -353,26 +376,3 @@ def get_filtered_wobbler_categories(df):
     )
 
     return keep_categories
-
-
-
-def policing_rates_by_reason_for_contact(df, census):
-    """
-    Calculate policing rates stratified by reason for contact.
-    """
-    reason_types = [
-        "Moving violation",
-        "Equipment violation",
-        "Non-moving violation",
-        "Suspect criminal activity"
-    ]
-    
-    policing_by_reason = {}
-    
-    for reason in reason_types:
-        subset = df[df["reason_for_contact"] == reason].copy()
-        if len(subset) > 0:
-            rates = policing_rates(subset, census)
-            policing_by_reason[reason] = rates
-    
-    return policing_by_reason

@@ -2,8 +2,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from matplotlib.ticker import FuncFormatter
 import matplotlib.colors as mcolors
+
+from matplotlib.ticker import FuncFormatter
 
 # ------------------------------------------------------------------
 # Plotting and visualization utilities
@@ -38,26 +39,6 @@ def _safe_visualization_setup(df, race_col):
     if "Year" in out.columns and race_col in out.columns:
         out = out.sort_values(["Year", race_col])
     return out
-
-
-
-def _prep_df(df, primary_statute_level=None):
-    """
-    Optional filter by primary_statute_level.
-    Applies race ordering via visualization_setup (or fallback).
-    """
-    d = df.copy()
-
-    if primary_statute_level is not None:
-        if "primary_statute_level" not in d.columns:
-            raise ValueError("primary_statute_level filter requested, but df has no 'primary_statute_level' column.")
-        d = d[d["primary_statute_level"] == primary_statute_level].copy()
-
-    if "race_std" not in d.columns:
-        raise ValueError("df must contain 'race_std' column.")
-
-    d = _safe_visualization_setup(d, "race_std")
-    return d
 
 
 
@@ -565,11 +546,7 @@ def plot_agency_black_white_hit_rates(agency_hit_df):
 
 
 
-def create_combined_sensitivity_visualization(
-    baseline_df,
-    mixed_df,
-    multiperson_df
-):
+def create_combined_sensitivity_visualization(baseline_df, mixed_df, multiperson_df):
     """
     Create a publication-ready two-panel sensitivity figure comparing:
     - Baseline

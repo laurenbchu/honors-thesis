@@ -3,21 +3,10 @@
 # -------------------------------------------
 
 import pandas as pd
-import numpy as np
 
 def load_census(county_fips):
     """
     Load and relabel Decennial Census PL Table P2 data for a given county.
-
-    Parameters
-    ----------
-    county_fips : str
-        5-digit county FIPS code (e.g. "06059" for Orange County)
-
-    Returns
-    -------
-    census_relabeled : pandas.DataFrame
-        Census P2 table with readable column labels and NA columns removed
     """
 
     # Import census data from API
@@ -45,6 +34,7 @@ def load_census(county_fips):
     census_relabeled = census.rename(columns=code_to_label)
 
     return census_relabeled
+
 
 
 def add_standardized_race(df, race_col):

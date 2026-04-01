@@ -1,9 +1,18 @@
-\begin{table}
-\caption{Felony Filing Rates for Wobbler Charges by Charge Category and Race}
-\label{tab:wobbler_by_category}
-\begin{tabular}{llrrrr}
+\begin{table}[htbp]
+\centering
+\small
+\caption{Felony Filing Rates for Wobbler Charges by Race and Charge Category}
+\label{tab:wobbler_combined}
+\begin{tabular}{ll rrrr}
 \toprule
 Category & Race & Total & Felony & Misdemeanor & Felony Rate (\%) \\
+\midrule
+\textit{Overall} & Black/African American & 5,684 & 2,927 & 2,757 & 51.5 ({\scriptsize $\pm$1.3}) \\
+ & Hispanic/Latino & 49,976 & 21,438 & 28,538 & 42.9 ({\scriptsize $\pm$0.4}) \\
+ & White & 35,432 & 11,179 & 24,253 & 31.6 ({\scriptsize $\pm$0.5}) \\
+ & Asian & 4,517 & 1,912 & 2,605 & 42.3 ({\scriptsize $\pm$1.4}) \\
+ & Other & 4,532 & 2,124 & 2,408 & 46.9 ({\scriptsize $\pm$1.5}) \\
+\addlinespace
 \midrule
 Theft/Burglary/Robbery & Black/African American & 1,659 & 1,406 & 253 & 84.7 ({\scriptsize $\pm$1.7}) \\
  & Hispanic/Latino & 11,065 & 9,271 & 1,794 & 83.8 ({\scriptsize $\pm$0.7}) \\
@@ -54,6 +63,6 @@ Obstruct/Resist Officer & Black/African American & 134 & 111 & 23 & 82.8 ({\scri
  & Other & 57 & 46 & 11 & 80.7 ({\scriptsize $\pm$10.2}) \\
 \bottomrule
 \end{tabular}
-    \smallskip
-    \parbox{\textwidth}{\footnotesize \textit{Note:} 95\% confidence intervals shown in parentheses ($\pm 1.96$ SE). Categories shown have more than 500 total wobbler charges and an overall felony filing rate of at least 10\%. Categories are ordered by total wobbler volume in descending order.}
+\smallskip
+\parbox{\textwidth}{\footnotesize \textit{Note:} 95\% confidence intervals shown in parentheses ($\pm$1.96 SE). The Overall row aggregates across all charge categories. Category-specific rows are restricted to categories with more than 500 total wobbler charges and an overall felony filing rate of at least 10\%. Categories are ordered by total wobbler volume in descending order.}
 \end{table}

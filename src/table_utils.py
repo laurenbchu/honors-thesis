@@ -331,357 +331,424 @@ def enhancement_rate_race_statute_category_table(enhancement_by_primary, top_cat
     
     return result.reset_index(drop=True)
 
-
-
 def wobbler_felony_rate_tables(df):
     """
-    Generate two tables for wobbler charges:
+    Generate a single combined wobbler table with:
+      - An "Overall" group showing felony filing rates by race across all wobblers
+      - Category-specific groups showing felony filing rates by race and charge category
 
-      1) Overall felony filing rates for wobblers by race
-      2) Felony filing rates for wobblers by charge category and race
-
-    For the charge-category table, categories are excluded if they:
+    Categories are excluded if they:
       - have fewer than 500 total wobblers across all races,
       - are the "Other" charge category, or
-      - have an overall felony filing rate below 10% when aggregated across all races.
+      - have an overall felony filing rate below 10%.
     """
 
-    # Filter to wobbler charges only
+    def compute_rates(grouped_df):
+        """Given a df with Felony and Misdemeanor columns, compute rate and SE."""
+        grouped_df = grouped_df.copy()
+        for col in ["Felony", "Misdemeanor"]:
+            if col not in grouped_df.columns:
+                grouped_df[col] = 0
+        grouped_df["Total"] = grouped_df["Felony"] + grouped_df["Misdemeanor"]
+        grouped_df["Felony Rate"] = grouped_df["Felony"] / grouped_df["Total"]
+        grouped_df["Felony Rate SE"] = np.sqrt(
+            grouped_df["Felony Rate"] *
+            (1 - grouped_df["Felony Rate"]) /
+            grouped_df["Total"]
+        )
+        grouped_df["Felony Rate (%) [95% CI]"] = grouped_df.apply(
+            lambda row: (
+                f"{row['Felony Rate']*100:.1f} "
+                f"(\u00b1{row['Felony Rate SE']*100*1.96:.1f})"
+            ),
+            axis=1,
+        )
+        return grouped_df
+
     wobblers = df[df["is_wobbler"]].copy()
 
-    # -----------------------------
-    # TABLE 1: Overall by race
-    # -----------------------------
-    wobbler_summary = (
+    # ------------------------------------------------------------------
+    # OVERALL section: one row per race
+    # ------------------------------------------------------------------
+    overall_raw = (
         wobblers
         .groupby(["race_std", "statute_level"])
         .size()
         .unstack(fill_value=0)
+        .reset_index()
     )
+    overall_raw = compute_rates(overall_raw)
+    overall_raw["Charge Category"] = "Overall"
+    overall_raw = overall_raw.rename(columns={"race_std": "Canonical Race"})
+    overall_raw = overall_raw[[
+        "Charge Category", "Canonical Race",
+        "Total", "Felony", "Misdemeanor", "Felony Rate (%) [95% CI]"
+    ]]
 
-    # Ensure both columns exist
-    for col in ["Felony", "Misdemeanor"]:
-        if col not in wobbler_summary.columns:
-            wobbler_summary[col] = 0
-
-    wobbler_summary["Total"] = wobbler_summary["Felony"] + wobbler_summary["Misdemeanor"]
-    wobbler_summary["Felony Rate"] = wobbler_summary["Felony"] / wobbler_summary["Total"]
-
-    wobbler_summary["Felony Rate SE"] = np.sqrt(
-        wobbler_summary["Felony Rate"] *
-        (1 - wobbler_summary["Felony Rate"]) /
-        wobbler_summary["Total"]
-    )
-
-    wobbler_summary.index.name = "Canonical Race"
-
-    wobbler_table = wobbler_summary[
-        ["Felony", "Misdemeanor", "Total", "Felony Rate", "Felony Rate SE"]
-    ].copy()
-
-    wobbler_table["Felony Rate (%)"] = wobbler_table.apply(
-        lambda row: f"{row['Felony Rate']*100:.1f} (±{row['Felony Rate SE']*100*1.96:.1f})",
-        axis=1
-    )
-
-    wobbler_table = wobbler_table[["Total", "Felony", "Misdemeanor", "Felony Rate (%)"]]
-    wobbler_table.columns = [
-        "Total Wobblers",
-        "Filed as Felony",
-        "Filed as Misdemeanor",
-        "Felony Rate (%) [95% CI]"
-    ]
-
-    # Enforce race order
-    wobbler_table = wobbler_table.reindex(TABLE_RACE_ORDER)
-
-    # -----------------------------
-    # TABLE 2: By charge category
-    # -----------------------------
-    wobbler_by_category = (
+    # ------------------------------------------------------------------
+    # BY CATEGORY section
+    # ------------------------------------------------------------------
+    cat_raw = (
         wobblers
         .groupby(["charge_category", "race_std", "statute_level"])
         .size()
         .unstack(fill_value=0)
+        .reset_index()
     )
-
-    for col in ["Felony", "Misdemeanor"]:
-        if col not in wobbler_by_category.columns:
-            wobbler_by_category[col] = 0
-
-    wobbler_by_category["Total"] = (
-        wobbler_by_category["Felony"] +
-        wobbler_by_category["Misdemeanor"]
-    )
-
-    wobbler_by_category["Felony Rate"] = (
-        wobbler_by_category["Felony"] /
-        wobbler_by_category["Total"]
-    )
-
-    wobbler_by_category["Felony Rate SE"] = np.sqrt(
-        wobbler_by_category["Felony Rate"] *
-        (1 - wobbler_by_category["Felony Rate"]) /
-        wobbler_by_category["Total"]
-    )
-
-    wobbler_category_table = wobbler_by_category.reset_index()
-
-    # Filter charge categories:
-    # - exclude "Other"
-    # - exclude categories with <500 total wobblers across all races
-    # - exclude categories with overall felony rate <10% across all races
-    category_stats = (
-        wobbler_category_table
-        .groupby("charge_category", as_index=False)
-        .agg({
-            "Total": "sum",
-            "Felony": "sum"
-        })
-    )
-
-    category_stats["Overall Felony Rate"] = (
-        category_stats["Felony"] / category_stats["Total"]
-    )
-
-    keep_categories = category_stats.loc[
-        (category_stats["charge_category"] != "Other") &
-        (category_stats["Total"] >= 500) &
-        (category_stats["Overall Felony Rate"] >= 0.1),
-        "charge_category"
-    ]
-
-    wobbler_category_table = wobbler_category_table[
-        wobbler_category_table["charge_category"].isin(keep_categories)
-    ].copy()
-
-    wobbler_category_table["Felony Rate (%)"] = wobbler_category_table.apply(
-        lambda row: f"{row['Felony Rate']*100:.1f} (±{row['Felony Rate SE']*100*1.96:.1f})",
-        axis=1
-    )
-
-    wobbler_category_table = wobbler_category_table[[
-        "charge_category", "race_std", "Total", "Felony", "Misdemeanor", "Felony Rate (%)"
+    cat_raw = compute_rates(cat_raw)
+    cat_raw = cat_raw.rename(columns={
+        "charge_category": "Charge Category",
+        "race_std":        "Canonical Race",
+    })
+    cat_raw = cat_raw[[
+        "Charge Category", "Canonical Race",
+        "Total", "Felony", "Misdemeanor", "Felony Rate (%) [95% CI]"
     ]]
 
-    wobbler_category_table.columns = [
+    # Filter categories
+    category_stats = (
+        cat_raw.groupby("Charge Category", as_index=False)
+        .agg(Total=("Total", "sum"), Felony=("Felony", "sum"))
+    )
+    category_stats["Overall Rate"] = (
+        category_stats["Felony"] / category_stats["Total"]
+    )
+    keep_categories = category_stats.loc[
+        (category_stats["Charge Category"] != "Other") &
+        (category_stats["Total"] >= 500) &
+        (category_stats["Overall Rate"] >= 0.1),
+        "Charge Category",
+    ].tolist()
+
+    cat_raw = cat_raw[cat_raw["Charge Category"].isin(keep_categories)].copy()
+
+    # Sort categories by total wobblers descending
+    category_order = (
+        cat_raw.groupby("Charge Category")["Total"]
+        .sum()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+
+    # ------------------------------------------------------------------
+    # Combine: Overall first, then categories
+    # ------------------------------------------------------------------
+    combined = pd.concat([overall_raw, cat_raw], ignore_index=True)
+
+    # Enforce category order with Overall first
+    combined["Charge Category"] = pd.Categorical(
+        combined["Charge Category"],
+        categories=["Overall"] + category_order,
+        ordered=True,
+    )
+
+    # Enforce race order within each category
+    combined["Canonical Race"] = pd.Categorical(
+        combined["Canonical Race"],
+        categories=TABLE_RACE_ORDER,
+        ordered=True,
+    )
+
+    combined = combined.sort_values(["Charge Category", "Canonical Race"])
+    combined.columns = [
         "Charge Category",
         "Canonical Race",
         "Total Wobblers",
         "Filed as Felony",
         "Filed as Misdemeanor",
-        "Felony Rate (%) [95% CI]"
+        "Felony Rate (%) [95% CI]",
     ]
 
-    # Enforce race order within each category
-    wobbler_category_table["Canonical Race"] = pd.Categorical(
-        wobbler_category_table["Canonical Race"],
-        categories=TABLE_RACE_ORDER,
-        ordered=True
-    )
+    # Hierarchical index so category appears once per group
+    combined = combined.set_index(["Charge Category", "Canonical Race"])
 
-    # Sort categories by total wobblers descending across all races
-    category_order = (
-        wobbler_category_table
-        .groupby("Charge Category")["Total Wobblers"]
-        .sum()
-        .sort_values(ascending=False)
-        .index
-    )
-
-    wobbler_category_table["Charge Category"] = pd.Categorical(
-        wobbler_category_table["Charge Category"],
-        categories=category_order,
-        ordered=True
-    )
-
-    wobbler_category_table = wobbler_category_table.sort_values(
-        ["Charge Category", "Canonical Race"]
-    )
-
-    # Set hierarchical index so category appears once per group
-    wobbler_category_table = wobbler_category_table.set_index(
-        ["Charge Category", "Canonical Race"]
-    )
-
-    return wobbler_table, wobbler_category_table
+    return combined
 
 
 # --------------------------------------------
 # Export latex table functions
 # --------------------------------------------
 
-def export_stops_searches_to_latex(summary_df):
+def export_policing_pooled_to_latex(policing_analysis):
     """
-    Export Table 1: Policing: Stops and Searches (per 1,000 residents)
+    Export pooled 2022-2024 policing summary table to LaTeX.
+
+    Columns: Population, Stops per 1,000, Searches per 1,000,
+             Search Rate (% with 95% CI), Hit Rate (% with 95% CI).
+
+    Stops and searches per 1,000 are means across years (no CI).
+    Search and hit rates are pooled from raw counts (CI shown).
+
+    Outputs:
+      - ../output/tables/policing_pooled.tex
     """
 
-    # Format function for estimates with CI
-    def fmt_est_ci(est, se, digits=2):
-        """Format like: 189.86 (±11.38) with ±1.96 SE"""
-        ci = 1.96 * se
-        return f"{est:.{digits}f} ({{\\scriptsize $\\pm${ci:.{digits}f}}})"
-    
-    # Race order for the table
-    race_order = [
-        "Black/African American",
-        "Hispanic/Latino", 
-        "White",
-        "Asian",
-        "Other"
-    ]
-    
-    # Get population (same across years)
-    pop_map = summary_df.groupby("Perceived Race")["Population"].first().to_dict()
-    
-    # Create formatted strings for each metric by race and year
-    stops_data = {}
-    searches_data = {}
-    
-    for race in race_order:
-        race_df = summary_df[summary_df["Perceived Race"] == race].sort_values("Year")
-        
-        stops_data[race] = {}
-        searches_data[race] = {}
-        
-        for _, row in race_df.iterrows():
-            year = int(row["Year"])
-            stops_data[race][year] = fmt_est_ci(
-                row["Stops per 1,000"], 
-                row["Stops per 1,000 SE"]
-            )
-            searches_data[race][year] = fmt_est_ci(
-                row["Searches per 1,000"],
-                row["Searches per 1,000 SE"]
-            )
-    
-    # Build LaTeX table
-    latex = []
-    latex.append(r"\begin{table}[htbp]")
-    latex.append(r"\centering")
-    latex.append(r"\caption{Policing: Stops and Searches (per 1,000 residents)}")
-    latex.append(r"\label{tab:stops_searches}")
-    latex.append(r"\begin{tabular}{l r ccc ccc}")
-    latex.append(r"\toprule")
-    latex.append(r" & & \multicolumn{3}{c}{Stops per 1,000} & \multicolumn{3}{c}{Searches per 1,000} \\")
-    latex.append(r"\cmidrule(lr){3-5} \cmidrule(lr){6-8}")
-    latex.append(r"Perceived Race & Population & 2022 & 2023 & 2024 & 2022 & 2023 & 2024 \\")
-    latex.append(r"\midrule")
-    
-    # Add data rows
-    for race in race_order:
-        pop = int(pop_map[race])
-        stops_2022 = stops_data[race].get(2022, "---")
-        stops_2023 = stops_data[race].get(2023, "---")
-        stops_2024 = stops_data[race].get(2024, "---")
-        searches_2022 = searches_data[race].get(2022, "---")
-        searches_2023 = searches_data[race].get(2023, "---")
-        searches_2024 = searches_data[race].get(2024, "---")
-        
-        row = f"{race} & {pop:,} & {stops_2022} & {stops_2023} & {stops_2024} & {searches_2022} & {searches_2023} & {searches_2024} \\\\"
-        latex.append(row)
-    
-    latex.append(r"\bottomrule")
-    latex.append(r"\end{tabular}")
-    latex.append(r"\smallskip")
-    latex.append(r"\parbox{\textwidth}{\footnotesize \textit{Note:} 95\% confidence intervals shown in parentheses (±1.96 SE).}")
-    latex.append(r"\end{table}")
-    
-    # Write to file
-    latex_str = "\n".join(latex)
-    with open("../output/tables/stops_searches_per_capita.tex", "w", encoding="utf-8") as f:
-        f.write(latex_str)
-    
-    print("Table exported: stops_searches_per_capita.tex")
-    return latex_str
+    os.makedirs("../output/tables", exist_ok=True)
 
+    def latexify_ci_string(x):
+        if pd.isna(x):
+            return "---"
+        return re.sub(r"\(±([^)]+)\)", r"({\\scriptsize $\\pm$\1})", str(x))
 
-
-def export_searches_hits_to_latex(summary_df):
-    """
-    Export Table 2: Search Rates and Hit Rates by Race and Year
-    """
-    
-    # Format function for percentages with CI
-    def fmt_pct_ci(rate, se, digits=2):
-        """Format rate as percentage like: 9.93 (±0.58) with ±1.96 SE"""
-        pct = rate * 100
-        ci = 1.96 * se * 100
-        return f"{pct:.{digits}f} ({{\\scriptsize $\\pm${ci:.{digits}f}}})"
-    
-    # Race order for the table
     race_order = [
         "Black/African American",
         "Hispanic/Latino",
-        "White", 
+        "White",
         "Asian",
-        "Other"
+        "Other",
     ]
-    
-    # Create formatted strings for each metric by race and year
-    search_rate_data = {}
-    hit_rate_data = {}
-    
-    for race in race_order:
-        race_df = summary_df[summary_df["Perceived Race"] == race].sort_values("Year")
-        
-        search_rate_data[race] = {}
-        hit_rate_data[race] = {}
-        
-        for _, row in race_df.iterrows():
-            year = int(row["Year"])
-            search_rate_data[race][year] = fmt_pct_ci(
-                row["Search Rate"],
-                row["Search Rate SE"]
-            )
-            # Handle NaN hit rates
-            if pd.notna(row["Hit Rate"]) and pd.notna(row["Hit Rate SE"]):
-                hit_rate_data[race][year] = fmt_pct_ci(
-                    row["Hit Rate"],
-                    row["Hit Rate SE"]
-                )
-            else:
-                hit_rate_data[race][year] = "---"
-    
-    # Build LaTeX table
+
+    df = policing_analysis.copy()
+
+    # Population (fixed across years)
+    pop = (
+        df[["Perceived Race", "Population"]]
+        .drop_duplicates("Perceived Race")
+        .set_index("Perceived Race")
+        .reindex(race_order)["Population"]
+        .apply(lambda x: f"{int(x):,}")
+    )
+
+    # Stops and searches per 1,000: mean across years, no CI
+    stops = (
+        df.groupby("Perceived Race")["Stops per 1,000"]
+        .mean()
+        .reindex(race_order)
+        .apply(lambda x: f"{x:.2f}")
+    )
+
+    searches = (
+        df.groupby("Perceived Race")["Searches per 1,000"]
+        .mean()
+        .reindex(race_order)
+        .apply(lambda x: f"{x:.2f}")
+    )
+
+    # Search rate: pool raw counts, compute rate + SE
+    sc = (
+        df.groupby("Perceived Race")[["Search Count", "Stop Count"]]
+        .sum()
+        .reindex(race_order)
+    )
+    sc["rate"] = sc["Search Count"] / sc["Stop Count"]
+    sc["se"]   = np.sqrt(sc["rate"] * (1 - sc["rate"]) / sc["Stop Count"])
+    search_rate = sc.apply(
+        lambda row: (
+            f"{row['rate']*100:.2f} "
+            f"(±{row['se']*100*1.96:.2f})"
+        ),
+        axis=1,
+    ).apply(latexify_ci_string)
+
+    # Hit rate: pool raw counts, compute rate + SE
+    hc = (
+        df.groupby("Perceived Race")[["Hit Count", "Search Count"]]
+        .sum()
+        .reindex(race_order)
+    )
+    hc["rate"] = hc["Hit Count"] / hc["Search Count"]
+    hc["se"]   = np.sqrt(hc["rate"] * (1 - hc["rate"]) / hc["Search Count"])
+    hit_rate = hc.apply(
+        lambda row: (
+            f"{row['rate']*100:.2f} "
+            f"(±{row['se']*100*1.96:.2f})"
+        ),
+        axis=1,
+    ).apply(latexify_ci_string)
+
+    # ------------------------------------------------------------------
+    # Build LaTeX
+    # ------------------------------------------------------------------
     latex = []
     latex.append(r"\begin{table}[htbp]")
     latex.append(r"\centering")
-    latex.append(r"\caption{Policing: Search Rates and Hit Rates by Race and Year}")
-    latex.append(r"\label{tab:search_hit_rates}")
-    latex.append(r"\begin{tabular}{l ccc ccc}")
+    latex.append(r"\small")
+    latex.append(
+        r"\caption{Pooled Policing Outcomes by Perceived Race, "
+        r"Orange County 2022--2024}"
+    )
+    latex.append(r"\label{tab:policing_pooled}")
+    latex.append(r"\begin{tabular}{l r cc cc}")
     latex.append(r"\toprule")
-    latex.append(r" & \multicolumn{3}{c}{Search Rate (\%)} & \multicolumn{3}{c}{Hit Rate (\%)} \\")
-    latex.append(r"\cmidrule(lr){2-4} \cmidrule(lr){5-7}")
-    latex.append(r"Perceived Race & 2022 & 2023 & 2024 & 2022 & 2023 & 2024 \\")
+    latex.append(
+        r" & & \multicolumn{2}{c}{Per capita (per 1,000)} & "
+        r"\multicolumn{2}{c}{Conditional rates (\%)} \\"
+    )
+    latex.append(r"\cmidrule(lr){3-4} \cmidrule(lr){5-6}")
+    latex.append(
+        r"Perceived Race & Population & "
+        r"Stops & Searches & "
+        r"Search Rate & Hit Rate \\"
+    )
     latex.append(r"\midrule")
-    
-    # Add data rows
+
     for race in race_order:
-        search_2022 = search_rate_data[race].get(2022, "---")
-        search_2023 = search_rate_data[race].get(2023, "---")
-        search_2024 = search_rate_data[race].get(2024, "---")
-        hit_2022 = hit_rate_data[race].get(2022, "---")
-        hit_2023 = hit_rate_data[race].get(2023, "---")
-        hit_2024 = hit_rate_data[race].get(2024, "---")
-        
-        row = f"{race} & {search_2022} & {search_2023} & {search_2024} & {hit_2022} & {hit_2023} & {hit_2024} \\\\"
-        latex.append(row)
-    
+        latex.append(
+            f"{race} & {pop[race]} & "
+            f"{stops[race]} & {searches[race]} & "
+            f"{search_rate[race]} & {hit_rate[race]} \\\\"
+        )
+
     latex.append(r"\bottomrule")
     latex.append(r"\end{tabular}")
     latex.append(r"\smallskip")
-    latex.append(r"\parbox{\textwidth}{\footnotesize \textit{Note:} 95\% confidence intervals shown in parentheses (±1.96 SE).}")
+    latex.append(
+        r"\parbox{\textwidth}{\footnotesize \textit{Note:} "
+        r"Stops and searches per 1,000 residents are averaged across "
+        r"2022--2024 using 2020 Census population denominators and are "
+        r"reported without uncertainty bands. "
+        r"Search and hit rates are computed from pooled counts across all "
+        r"three years. "
+        r"95\% confidence intervals shown in parentheses ($\pm$1.96 SE).}"
+    )
     latex.append(r"\end{table}")
-    
-    # Write to file
+
     latex_str = "\n".join(latex)
-    with open("../output/tables/searches_hits.tex", "w", encoding="utf-8") as f:
+
+    with open("../output/tables/policing_pooled.tex", "w", encoding="utf-8") as f:
         f.write(latex_str)
-    
-    print("Table exported: searches_hits.tex")
+
+    print("Table exported: policing_pooled.tex")
     return latex_str
 
+
+def export_policing_by_year(policing_analysis):
+    """
+    Export merged Table 1+2: Policing summary by race and year.
+    Combines stops per 1,000, searches per 1,000, search rate, and hit rate
+    into a single landscape table.
+    """
+
+    def fmt_est_ci(est, se, digits=2):
+        """Format estimate with ±1.96 SE confidence interval."""
+        if pd.isna(est) or pd.isna(se):
+            return "---"
+        ci = 1.96 * se
+        return f"{est:.{digits}f} {{\\scriptsize ($\\pm${ci:.{digits}f})}}"
+
+    def fmt_pct_ci(rate, se, digits=2):
+        """Format rate as percentage with ±1.96 SE confidence interval."""
+        if pd.isna(rate) or pd.isna(se):
+            return "---"
+        pct = rate * 100
+        ci = 1.96 * se * 100
+        return f"{pct:.{digits}f} {{\\scriptsize ($\\pm${ci:.{digits}f})}}"
+
+    race_order = [
+        "Black/African American",
+        "Hispanic/Latino",
+        "White",
+        "Asian",
+        "Other",
+    ]
+
+    years = sorted(policing_analysis["Year"].dropna().unique().astype(int).tolist())
+
+    # Build one row per race
+    rows = []
+    for race in race_order:
+        d = policing_analysis[policing_analysis["Perceived Race"] == race].sort_values("Year")
+        pop = int(d["Population"].iloc[0]) if not d.empty else 0
+
+        row = {"Perceived Race": race, "Population": f"{pop:,}"}
+
+        for yr in years:
+            yr_d = d[d["Year"] == yr]
+            if yr_d.empty:
+                row[f"stops_{yr}"]  = "---"
+                row[f"srch_{yr}"]   = "---"
+                row[f"sr_{yr}"]     = "---"
+                row[f"hr_{yr}"]     = "---"
+            else:
+                r = yr_d.iloc[0]
+                row[f"stops_{yr}"] = f"{r['Stops per 1,000']:.2f}"
+                row[f"srch_{yr}"]  = f"{r['Searches per 1,000']:.2f}"
+                row[f"sr_{yr}"] = fmt_pct_ci(
+                    r["Search Rate"], r["Search Rate SE"]
+                )
+                hr_val = r["Hit Rate"]   if "Hit Rate"    in r.index else float("nan")
+                hr_se  = r["Hit Rate SE"] if "Hit Rate SE" in r.index else float("nan")
+                row[f"hr_{yr}"] = fmt_pct_ci(hr_val, hr_se)
+
+        rows.append(row)
+
+    # ------------------------------------------------------------------
+    # Build LaTeX
+    # ------------------------------------------------------------------
+    n_years = len(years)
+    year_str = " & ".join(str(y) for y in years)
+
+    # Column spec: race label | population | 3 cols each for 4 metrics
+    col_spec = "l r " + " ".join(["ccc"] * 4)
+
+    latex = []
+    latex.append(r"\begin{landscape}")
+    latex.append(r"\begin{table}[htbp]")
+    latex.append(r"\centering")
+    latex.append(r"\small")
+    latex.append(
+        r"\caption{Policing Outcomes by Perceived Race and Year, Orange County 2022--2024}"
+    )
+    latex.append(r"\label{tab:policing_summary}")
+    latex.append(rf"\begin{{tabular}}{{{col_spec}}}")
+    latex.append(r"\toprule")
+
+    # Row 1: metric group headers
+    latex.append(
+        r" & & "
+        r"\multicolumn{3}{c}{Stops per 1,000} & "
+        r"\multicolumn{3}{c}{Searches per 1,000} & "
+        r"\multicolumn{3}{c}{Search Rate (\%)} & "
+        r"\multicolumn{3}{c}{Hit Rate (\%)} \\"
+    )
+
+    # Cmidrule separators under each metric group
+    latex.append(
+        r"\cmidrule(lr){3-5} \cmidrule(lr){6-8} "
+        r"\cmidrule(lr){9-11} \cmidrule(lr){12-14}"
+    )
+
+    # Row 2: year sub-headers
+    latex.append(
+        rf"Perceived Race & Population & "
+        rf"{year_str} & {year_str} & {year_str} & {year_str} \\"
+    )
+    latex.append(r"\midrule")
+
+    # Data rows
+    for row in rows:
+        race = row["Perceived Race"]
+        pop  = row["Population"]
+        cells = []
+        for yr in years:
+            cells.append(row[f"stops_{yr}"])
+        for yr in years:
+            cells.append(row[f"srch_{yr}"])
+        for yr in years:
+            cells.append(row[f"sr_{yr}"])
+        for yr in years:
+            cells.append(row[f"hr_{yr}"])
+        latex.append(f"{race} & {pop} & " + " & ".join(cells) + r" \\")
+
+    latex.append(r"\bottomrule")
+    latex.append(r"\end{tabular}")
+    latex.append(r"\smallskip")
+    latex.append(
+        r"\parbox{\linewidth}{\footnotesize \textit{Note:} "
+        r"Stops and searches per 1,000 residents use 2020 Census population denominators. "
+        r"95\% confidence intervals shown in parentheses ($\pm$1.96 SE) for conditional "
+        r"rates; per-capita rates are reported without uncertainty bands.}"
+    )
+    latex.append(r"\end{table}")
+    latex.append(r"\end{landscape}")
+
+    latex_str = "\n".join(latex)
+
+    with open("../output/tables/policing_by_year.tex", "w", encoding="utf-8") as f:
+        f.write(latex_str)
+
+    print("Table exported: policing_by_year.tex")
+    return latex_str
 
 
 def export_reason_for_contact_table_to_latex(table_df):
@@ -1104,14 +1171,12 @@ def export_enhancement_tables_to_latex(enhancement_combined, enhancement_categor
     return overall_latex, by_cat_latex
 
 
-
-def export_wobbler_tables_to_latex(wobbler_table, wobbler_category_table):
+def export_wobbler_combined_to_latex(wobbler_combined):
     """
-    Export the two wobbler tables to LaTeX.
+    Export the combined wobbler table (Overall + by charge category) to LaTeX.
 
     Outputs:
-      - ../output/tables/wobbler_overall.tex
-      - ../output/tables/wobbler_by_category.tex
+      - ../output/tables/wobbler_combined.tex
     """
 
     os.makedirs("../output/tables", exist_ok=True)
@@ -1127,165 +1192,97 @@ def export_wobbler_tables_to_latex(wobbler_table, wobbler_category_table):
             return "---"
         return f"{int(x):,}"
 
-    # -----------------------------
-    # Table 1: Overall by race
-    # -----------------------------
-    overall = wobbler_table.copy()
+    # ------------------------------------------------------------------
+    # Prepare data
+    # ------------------------------------------------------------------
+    combined = wobbler_combined.copy().reset_index()
 
-    # Add comma formatting to count columns
+    # Format count columns
     for col in ["Total Wobblers", "Filed as Felony", "Filed as Misdemeanor"]:
-        overall[col] = overall[col].apply(fmt_int_with_commas)
+        combined[col] = combined[col].apply(fmt_int_with_commas)
 
-    overall["Felony Rate (%) [95% CI]"] = overall["Felony Rate (%) [95% CI]"].apply(latexify_ci_string)
-
-    overall = overall.rename(columns={
-        "Felony Rate (%) [95% CI]": r"Felony Rate (\%)"
-    })
-
-    overall = overall.reset_index()
-
-    overall_latex = overall.to_latex(
-        index=False,
-        escape=False,
-        column_format="lrrrr",
-        caption="Overall Felony Filing Rates for Wobbler Charges by Race",
-        label="tab:wobbler_overall",
-        na_rep="---"
+    combined["Felony Rate (%) [95% CI]"] = (
+        combined["Felony Rate (%) [95% CI]"].apply(latexify_ci_string)
     )
-
-    # Add note to match your other tables
-    overall_latex = overall_latex.replace(
-        r"\end{tabular}",
-        r"""\end{tabular}
-\smallskip
-\parbox{\textwidth}{\footnotesize \textit{Note:} 95\% confidence intervals shown in parentheses ($\pm 1.96$ SE).}"""
-    )
-
-    with open("../output/tables/wobbler_overall.tex", "w", encoding="utf-8") as f:
-        f.write(overall_latex)
-
-    # -----------------------------
-    # Table 2: By charge category (compact + group lines)
-    # -----------------------------
-    by_cat = wobbler_category_table.copy().reset_index()
-
-    # Drop "Other" charge category since it is not analyzed elsewhere
-    by_cat = by_cat[by_cat["Charge Category"] != "Other"].copy()
-
-    # Compute totals and felony rates by category
-    category_stats = (
-        by_cat.groupby("Charge Category")
-        .agg({
-            "Total Wobblers": "sum",
-            "Filed as Felony": "sum"
-        })
-    )
-
-    category_stats["Felony Rate"] = (
-        category_stats["Filed as Felony"] /
-        category_stats["Total Wobblers"]
-    )
-
-    # Keep categories with >500 wobblers AND >=10% felony rate
-    category_stats = category_stats[
-        (category_stats["Total Wobblers"] > 500) &
-        (category_stats["Felony Rate"] >= 0.10)
-    ]
-
-    # Sort by total wobblers descending
-    category_stats = category_stats.sort_values(
-        "Total Wobblers",
-        ascending=False
-    )
-
-    keep_categories = category_stats.index.tolist()
-
-    by_cat = by_cat[by_cat["Charge Category"].isin(keep_categories)].copy()
-
-    # Sort categories by total wobblers descending, then race order within category
-    by_cat["Charge Category"] = pd.Categorical(
-        by_cat["Charge Category"],
-        categories=keep_categories,
-        ordered=True
-    )
-
-    by_cat["Canonical Race"] = pd.Categorical(
-        by_cat["Canonical Race"],
-        categories=TABLE_RACE_ORDER,
-        ordered=True
-    )
-
-    by_cat = by_cat.sort_values(["Charge Category", "Canonical Race"]).copy()
-
-    # Add comma formatting to count columns
-    for col in ["Total Wobblers", "Filed as Felony", "Filed as Misdemeanor"]:
-        by_cat[col] = by_cat[col].apply(fmt_int_with_commas)
-
-    by_cat["Felony Rate (%) [95% CI]"] = by_cat["Felony Rate (%) [95% CI]"].apply(latexify_ci_string)
 
     # Blank repeated category labels so each category prints once
-    by_cat["Charge Category"] = by_cat["Charge Category"].astype(object)
-    by_cat["Charge Category"] = by_cat["Charge Category"].mask(
-        by_cat["Charge Category"].duplicated(), ""
+    combined["Charge Category"] = combined["Charge Category"].astype(object)
+    combined["Charge Category"] = combined["Charge Category"].mask(
+        combined["Charge Category"].duplicated(), ""
     )
 
-    # Rename columns
-    by_cat = by_cat.rename(columns={
-        "Charge Category": "Category",
-        "Canonical Race": "Race",
-        "Total Wobblers": "Total",
-        "Filed as Felony": "Felony",
-        "Filed as Misdemeanor": "Misdemeanor",
-        "Felony Rate (%) [95% CI]": r"Felony Rate (\%)"
+    combined = combined.rename(columns={
+        "Charge Category":          "Category",
+        "Canonical Race":           "Race",
+        "Total Wobblers":           "Total",
+        "Filed as Felony":          "Felony",
+        "Filed as Misdemeanor":     "Misdemeanor",
+        "Felony Rate (%) [95% CI]": r"Felony Rate (\%)",
     })
 
-    by_cat_latex = by_cat.to_latex(
-        index=False,
-        escape=False,
-        column_format="llrrrr",
-        caption="Felony Filing Rates for Wobbler Charges by Charge Category and Race",
-        label="tab:wobbler_by_category",
-        na_rep="---"
+    # ------------------------------------------------------------------
+    # Build LaTeX manually so we can control group separators
+    # ------------------------------------------------------------------
+    latex = []
+    latex.append(r"\begin{table}[htbp]")
+    latex.append(r"\centering")
+    latex.append(r"\small")
+    latex.append(
+        r"\caption{Felony Filing Rates for Wobbler Charges by Race and Charge Category}"
     )
-
-    # Insert horizontal lines between charge-category groups
-    lines = by_cat_latex.splitlines()
-    new_lines = []
-    data_started = False
-
-    for i, line in enumerate(lines):
-        new_lines.append(line)
-
-        if r"\midrule" in line:
-            data_started = True
-            continue
-
-        if data_started and i + 1 < len(lines):
-            next_line = lines[i + 1]
-            current_has_row = "&" in line and r"\bottomrule" not in line
-            next_has_row = "&" in next_line and r"\bottomrule" not in next_line
-
-            if current_has_row and next_has_row:
-                first_cell_next = next_line.split("&")[0].strip()
-                if first_cell_next != "" and not next_line.startswith(r"\bottomrule"):
-                    new_lines.append(r"\addlinespace")
-                    new_lines.append(r"\midrule")
-
-    by_cat_latex = "\n".join(new_lines)
-
-    # Add note
-    by_cat_latex = by_cat_latex.replace(
-        r"\end{tabular}",
-        r"""\end{tabular}
-    \smallskip
-    \parbox{\textwidth}{\footnotesize \textit{Note:} 95\% confidence intervals shown in parentheses ($\pm 1.96$ SE). Categories shown have more than 500 total wobbler charges and an overall felony filing rate of at least 10\%. Categories are ordered by total wobbler volume in descending order.}"""
+    latex.append(r"\label{tab:wobbler_combined}")
+    latex.append(r"\begin{tabular}{ll rrrr}")
+    latex.append(r"\toprule")
+    latex.append(
+        r"Category & Race & Total & Felony & Misdemeanor & Felony Rate (\%) \\"
     )
+    latex.append(r"\midrule")
 
-    with open("../output/tables/wobbler_by_category.tex", "w", encoding="utf-8") as f:
-        f.write(by_cat_latex)
+    prev_category = None
+    for _, row in combined.iterrows():
+        category = row["Category"]
+        race     = row["Race"]
+        total    = row["Total"]
+        felony   = row["Felony"]
+        misdem   = row["Misdemeanor"]
+        rate     = row[r"Felony Rate (\%)"]
 
-    print("Tables exported:")
-    print(" - wobbler_overall.tex")
-    print(" - wobbler_by_category.tex")
+        # Insert separator between groups (when a new non-blank category starts)
+        if category != "" and prev_category is not None:
+            latex.append(r"\addlinespace")
+            latex.append(r"\midrule")
 
-    return overall_latex, by_cat_latex
+        # Bold the Overall category label for visual prominence
+        if category == "Overall":
+            cat_cell = r"\textit{Overall}"
+        else:
+            cat_cell = category
+
+        latex.append(
+            f"{cat_cell} & {race} & {total} & {felony} & {misdem} & {rate} \\\\"
+        )
+
+        if category != "":
+            prev_category = category
+
+    latex.append(r"\bottomrule")
+    latex.append(r"\end{tabular}")
+    latex.append(r"\smallskip")
+    latex.append(
+        r"\parbox{\textwidth}{\footnotesize \textit{Note:} "
+        r"95\% confidence intervals shown in parentheses ($\pm$1.96 SE). "
+        r"The Overall row aggregates across all charge categories. "
+        r"Category-specific rows are restricted to categories with more than "
+        r"500 total wobbler charges and an overall felony filing rate of at "
+        r"least 10\%. Categories are ordered by total wobbler volume in "
+        r"descending order.}"
+    )
+    latex.append(r"\end{table}")
+
+    latex_str = "\n".join(latex)
+
+    with open("../output/tables/wobbler_combined.tex", "w", encoding="utf-8") as f:
+        f.write(latex_str)
+
+    print("Table exported: wobbler_combined.tex")
+    return latex_str

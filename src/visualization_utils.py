@@ -41,181 +41,476 @@ def _safe_visualization_setup(df, race_col):
     return out
 
 
+def plot_policing_by_year(policing_analysis):
+    """
+    Two-row summary figure:
+      Top row    -- pooled 2022-2024 dot plots (one point per race, with CI for rates)
+      Bottom row -- by-year line plots (with CI ribbons for rates)
+    White group: dashed line, hollow circle markers throughout.
+    """
+    import matplotlib.lines as mlines
 
-def visualize_policing(policing_analysis):
+    plt.rcParams.update({
+        "font.size": 13,
+        "axes.titlesize": 13,
+        "axes.labelsize": 13,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
+        "legend.fontsize": 13,
+    })
 
     df = policing_analysis.copy()
     race_col = "Perceived Race"
-    
-    def visualization_setup(df, race_col):
-        """
-        Enforce a consistent race order and sort for plotting.
-        race_col should be either:
-        - "Perceived Race" (policing)
-        - "Canonical Race" (prosecution)
-        """
-        out = df.copy()
+    df[race_col] = pd.Categorical(df[race_col], categories=RACE_ORDER, ordered=True)
+    df = df.sort_values(["Year", race_col])
 
-        race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
-
-        if race_col in out.columns:
-            out[race_col] = pd.Categorical(out[race_col], categories=race_order, ordered=True)
-
-        if "Year" in out.columns and race_col in out.columns:
-            out = out.sort_values(["Year", race_col])
-
-        return out
-
-    df = visualization_setup(df, race_col=race_col)
-    
-    # Use centralized color map
     color_map = COLOR_MAP
-    
     years = sorted(df["Year"].dropna().unique().tolist())
-    
-    # Create 2x2 figure
-    fig, axes = plt.subplots(2, 2, figsize=(20, 14), gridspec_kw={'wspace': 0.25, 'hspace': 0.30})
-    axes = axes.flatten()
-    
-    # Define the four panels
+
+    # ------------------------------------------------------------------
+    # Pre-compute pooled values for top row
+    # ------------------------------------------------------------------
+    pooled_rows = []
+    for race in RACE_ORDER:
+        d = df[df[race_col] == race]
+        row = {"Perceived Race": race}
+
+        for col in ["Stops per 1,000", "Searches per 1,000"]:
+            row[col] = d[col].mean()
+
+        sc  = d["Search Count"].sum()
+        stc = d["Stop Count"].sum()
+        sr  = sc / stc if stc > 0 else np.nan
+        row["Search Rate"]    = sr
+        row["Search Rate SE"] = np.sqrt(sr * (1 - sr) / stc) if stc > 0 else np.nan
+
+        pooled_rows.append(row)
+
+    pooled = pd.DataFrame(pooled_rows)
+    pooled[race_col] = pd.Categorical(
+        pooled[race_col], categories=RACE_ORDER, ordered=True
+    )
+
+    # ------------------------------------------------------------------
+    # Figure: taller to give header area more room
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 3, figsize=(16, 12))
+
     panels = [
         {
-            'ax_idx': 0,
-            'y_col': 'Stops per 1,000',
-            'title': '(A) Police Stop Rates\n(per 1,000 residents)',
-            'ylabel': 'Stops per 1,000 Residents',
-            'count_col': 'Stop Count',
-            'is_rate': False
+            "col":       0,
+            "y_col":     "Stops per 1,000",
+            "top_title": "(A) Stop Rate\n(per 1,000 residents)",
+            "bot_title": "(D) Stop Rate by Year",
+            "ylabel":    "Stops per 1,000 Residents",
+            "is_rate":   False,
         },
         {
-            'ax_idx': 1,
-            'y_col': 'Searches per 1,000',
-            'title': '(B) Searches per Capita\n(per 1,000 residents)',
-            'ylabel': 'Searches per 1,000 Residents',
-            'count_col': 'Search Count',
-            'is_rate': False
+            "col":       1,
+            "y_col":     "Searches per 1,000",
+            "top_title": "(B) Search Rate\n(per 1,000 residents)",
+            "bot_title": "(E) Search Rate by Year",
+            "ylabel":    "Searches per 1,000 Residents",
+            "is_rate":   False,
         },
         {
-            'ax_idx': 2,
-            'y_col': 'Search Rate',
-            'title': '(C) Conditional Search Rate\n(among those stopped)',
-            'ylabel': 'Search Rate',
-            'count_col': 'Search Count',
-            'is_rate': True
+            "col":       2,
+            "y_col":     "Search Rate",
+            "top_title": "(C) Conditional Search Rate\n(among those stopped)",
+            "bot_title": "(F) Conditional Search Rate by Year",
+            "ylabel":    "Search Rate",
+            "is_rate":   True,
         },
-        {
-            'ax_idx': 3,
-            'y_col': 'Hit Rate',
-            'title': '(D) Contraband Hit Rate\n(contraband found given search)',
-            'ylabel': 'Hit Rate',
-            'count_col': 'Hit Count',
-            'is_rate': True
-        }
     ]
-    
+
+    SHORT_LABELS = ["Black", "Hispanic", "White", "Asian"]
+
+    def fmt_clean(y, _):
+        if abs(y - round(y)) < 1e-9:
+            return str(int(round(y)))
+        return f"{y:.1f}"
+
+    # ------------------------------------------------------------------
+    # TOP ROW: pooled dot plots
+    # ------------------------------------------------------------------
     for panel in panels:
-        ax = axes[panel['ax_idx']]
-        y_col = panel['y_col']
-        count_col = panel['count_col']
-        
-        for race in color_map.keys():
+        ax    = axes[0, panel["col"]]
+        y_col = panel["y_col"]
+
+        for race in RACE_ORDER:
+            d = pooled[pooled[race_col] == race]
+            if d.empty or d[y_col].isna().all():
+                continue
+
+            val   = float(d[y_col].values[0])
+            xpos  = list(RACE_ORDER).index(race)
+            color = color_map[race]
+
+            # Error bars for conditional rate only, and only if CI > marker radius
+            if panel["is_rate"]:
+                se_val = (
+                    float(d["Search Rate SE"].values[0])
+                    if "Search Rate SE" in d.columns
+                    else np.nan
+                )
+                ci = se_val * 1.96 if pd.notna(se_val) else np.nan
+
+                if pd.notna(ci) and ci > 0:
+                    ax.errorbar(
+                        xpos, val,
+                        yerr=ci,
+                        fmt="none",
+                        ecolor=color,
+                        elinewidth=2.0,
+                        capsize=5,
+                        capthick=2.0,
+                        alpha=0.9,
+                        zorder=4,
+                    )
+
+            # Marker on top
+            ax.plot(
+                xpos, val,
+                marker="o", markersize=10,
+                color=color,
+                markerfacecolor="white" if race == "White" else color,
+                markeredgecolor=color,
+                markeredgewidth=2.0,
+                linestyle="none",
+                zorder=5,
+            )
+
+        ax.set_title(panel["top_title"], fontsize=13, fontweight="bold", pad=10)
+        ax.set_ylabel(panel["ylabel"], fontsize=14)
+        ax.set_xticks(range(len(RACE_ORDER)))
+        ax.set_xticklabels(SHORT_LABELS, fontsize=13)
+        ax.set_xlim(-0.6, len(RACE_ORDER) - 0.4)
+        ax.tick_params(axis="x", length=3)
+        ax.grid(True, axis="y", alpha=0.3, linestyle=":", linewidth=0.8)
+        ax.set_axisbelow(True)
+
+        if panel["is_rate"]:
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0%}"))
+        elif y_col == "Searches per 1,000":
+            ax.yaxis.set_major_formatter(FuncFormatter(fmt_clean))
+
+        ylo, yhi = ax.get_ylim()
+        ax.set_ylim(ylo, yhi + 0.18 * (yhi - ylo))
+
+    # ------------------------------------------------------------------
+    # BOTTOM ROW: by-year line plots
+    # White: line first (zorder=3), then markers with white fill (zorder=5)
+    # so hollow circle sits cleanly above the dashes.
+    # ------------------------------------------------------------------
+    for panel in panels:
+        ax    = axes[1, panel["col"]]
+        y_col = panel["y_col"]
+
+        for race in RACE_ORDER:
             d = df[df[race_col] == race].sort_values("Year")
-            if len(d) > 0 and d[y_col].notna().any():
-                linewidth = 2.5 if race == "White" else 2
-                linestyle = '--' if race == "White" else '-'
-                
-                x_vals = d["Year"]
-                
-                # Plot main line
-                ax.plot(x_vals, d[y_col], 
-                       marker="o", markersize=8,
-                       linewidth=linewidth, linestyle=linestyle,
-                       color=color_map[race], label=race)
-                
-                # Add error ribbons if available
+            if d.empty or d[y_col].isna().all():
+                continue
+
+            color    = color_map[race]
+            is_white = race == "White"
+            lw       = 2.8 if is_white else 2.2
+            ls       = "--" if is_white else "-"
+            mew      = 2.0 if is_white else 1.2
+
+            # CI ribbon
+            if panel["is_rate"]:
                 se_col = f"{y_col} SE"
                 if se_col in d.columns and d[se_col].notna().any():
-                    ci_lower = d[y_col] - d[se_col]*1.96
-                    ci_upper = d[y_col] + d[se_col]*1.96
-                    
-                    ribbon_alpha = 0.12 if "Hit Rate" in y_col else 0.2
-                    ax.fill_between(x_vals, ci_lower, ci_upper,
-                                   color=color_map[race], 
-                                   alpha=ribbon_alpha, linewidth=0)
-                
-                # Add sample size annotations for 2024 only
-                if count_col and count_col in d.columns:
-                    for idx, row in d.iterrows():
-                        if row["Year"] == 2024:
-                            n = int(row[count_col])
-                            x_pos = row["Year"]
-                            y_val = row[y_col]
-                            
-                            ax.annotate(f'n={n:,}', 
-                                      xy=(x_pos, y_val),
-                                      xytext=(0, 12), textcoords='offset points',
-                                      fontsize=8, ha='center', alpha=0.9,
-                                      color=color_map[race],
-                                      bbox=dict(boxstyle='round,pad=0.3', 
-                                               facecolor='white', 
-                                               edgecolor='none',
-                                               alpha=0.7))
-        
-        ax.set_xlabel("Year", fontsize=11, fontweight='bold')
-        ax.set_ylabel(panel['ylabel'], fontsize=11, fontweight='bold')
-        ax.set_title(panel['title'], fontsize=13, fontweight='bold', pad=15)
+                    ax.fill_between(
+                        d["Year"],
+                        d[y_col] - d[se_col] * 1.96,
+                        d[y_col] + d[se_col] * 1.96,
+                        color=color, alpha=0.18, linewidth=0, zorder=2,
+                    )
+
+            if is_white:
+                # Dashed line, no markers
+                ax.plot(
+                    d["Year"], d[y_col],
+                    marker="none",
+                    linewidth=lw, linestyle=ls,
+                    color=color,
+                    zorder=3,
+                )
+                # Markers only, white fill covers the line beneath
+                ax.plot(
+                    d["Year"], d[y_col],
+                    marker="o", markersize=8,
+                    markerfacecolor="white",
+                    markeredgecolor=color,
+                    markeredgewidth=mew,
+                    linestyle="none",
+                    color=color,
+                    label=race,
+                    zorder=5,
+                )
+            else:
+                ax.plot(
+                    d["Year"], d[y_col],
+                    marker="o", markersize=7,
+                    markerfacecolor=color,
+                    markeredgecolor=color,
+                    markeredgewidth=mew,
+                    linewidth=lw, linestyle=ls,
+                    color=color,
+                    label=race,
+                    zorder=3,
+                )
+
+        ax.set_title(panel["bot_title"], fontsize=13, fontweight="bold", pad=10)
+        ax.set_xlabel("Year", fontsize=14)
+        ax.set_ylabel(panel["ylabel"], fontsize=14)
         ax.set_xticks(years)
-        ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.5)
+        ax.tick_params(labelsize=13)
+        ax.grid(True, alpha=0.3, linestyle=":", linewidth=0.8)
+        ax.set_axisbelow(True)
 
-        # Format y-axis
-        def clean_half_steps(y, _):
-            return f'{int(y)}' if float(y).is_integer() else f'{y:.1f}'
+        if y_col == "Stops per 1,000":
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}"))
+        elif y_col == "Searches per 1,000":
+            ax.yaxis.set_major_formatter(FuncFormatter(fmt_clean))
+        elif panel["is_rate"]:
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0%}"))
 
-        if panel['y_col'] == 'Stops per 1,000':
-            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f'{y:.0f}'))
-        elif panel['y_col'] == 'Searches per 1,000':
-            ax.yaxis.set_major_formatter(FuncFormatter(clean_half_steps))
-        elif panel['is_rate']:
-            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f'{y:.0%}'))
+        ylo, yhi = ax.get_ylim()
+        ax.set_ylim(ylo, yhi + 0.15 * (yhi - ylo))
 
-        # Add extra space at top for labels
-        y_min, y_max = ax.get_ylim()
-        y_range = y_max - y_min
-        ax.set_ylim(y_min, y_max + 0.15 * y_range)
-    
-    # Add overall title
+    # ------------------------------------------------------------------
+    # Spacing first -- must be called before placing fig.text so that
+    # figure-fraction coordinates are stable.
+    #
+    # top=0.84 leaves ~16% of the figure height above the panels for:
+    #   suptitle  (~y=0.98)
+    #   legend    (~y=0.93)
+    #   "Pooled"  (~y=0.87, just above top panel edge at 0.84)
+    # ------------------------------------------------------------------
+    plt.subplots_adjust(
+        left=0.07, right=0.97,
+        top=0.83, bottom=0.07,
+        hspace=0.50, wspace=0.28,
+    )
+
+    # ------------------------------------------------------------------
+    # Overall title
+    # ------------------------------------------------------------------
     fig.suptitle(
-        'Police Contact Patterns by Perceived Race',
-        fontsize=16,
-        fontweight='bold',
-        y=0.965
+        "Police Contact Patterns by Perceived Race",
+        fontsize=18, fontweight="bold", y=0.985,
     )
 
-    # Add centered legend between title and plots
-    handles, labels = axes[0].get_legend_handles_labels()
+    # ------------------------------------------------------------------
+    # Legend: sits between suptitle and "Pooled" row header, no overlap
+    # ------------------------------------------------------------------
+    legend_handles = []
+    for race in RACE_ORDER:
+        is_white = race == "White"
+        handle = mlines.Line2D(
+            [0], [0],
+            color=color_map[race],
+            linestyle=(0, (2.5, 2.5)) if is_white else "-",
+            linewidth=3.5 if is_white else 3.0,
+            marker="o",
+            markersize=13,
+            markerfacecolor="white" if is_white else color_map[race],
+            markeredgecolor=color_map[race],
+            markeredgewidth=2.0 if is_white else 1.2,
+            label=race,
+        )
+        legend_handles.append(handle)
+
     fig.legend(
-        handles, labels,
-        fontsize=11,
+        handles=legend_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.96),
+        ncol=4,
         frameon=True,
-        fancybox=True,
-        shadow=False,
-        loc='upper center',
-        bbox_to_anchor=(0.5, 0.95),
-        ncol=4
+        fancybox=False,
+        edgecolor="0.8",
+        fontsize=16,
+        handlelength=2.8,
+        handletextpad=0.8,
+        labelspacing=0.7,
+        columnspacing=2.0,
     )
 
-    # Manually reserve space for title + legend
-    fig.subplots_adjust(
-        top=0.87,
-        bottom=0.08,
-        left=0.07,
-        right=0.98,
-        hspace=0.30,
-        wspace=0.25
+    # ------------------------------------------------------------------
+    # Row header labels + divider
+    # "Pooled" sits just above the top panel row edge (top=0.84)
+    # Divider at y=0.455; "By Year" just below at y=0.433
+    # ------------------------------------------------------------------
+    fig.text(
+        0.03, 0.89,
+        "Pooled 2022-2024",
+        ha="left", va="bottom",
+        fontsize=16, fontweight="bold", color="0.25",
+    )
+
+    fig.add_artist(
+    plt.Line2D(
+        [0.03, 0.99], [0.46, 0.46],
+        transform=fig.transFigure,
+        color="0.75", linewidth=0.8,
+    )
+
+    )
+    fig.text(
+        0.03, 0.43,
+        "By Year",
+        ha="left", va="top",
+        fontsize=16, fontweight="bold", color="0.25",
+    )
+    return fig
+
+
+def plot_hit_rate_by_year(policing_analysis):
+    """
+    Single-panel line plot of contraband hit rate by year and perceived race.
+    White group: dashed line, hollow circle markers (line drawn first, markers on top).
+    95% CI ribbons shown for all groups.
+    Legend: vertical, on the left inside the plot area.
+    """
+    import matplotlib.lines as mlines
+
+    plt.rcParams.update({
+        "font.size": 14,
+        "axes.titlesize": 14,
+        "axes.labelsize": 14,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 14,
+    })
+
+    df = policing_analysis.copy()
+    race_col = "Perceived Race"
+    df[race_col] = pd.Categorical(df[race_col], categories=RACE_ORDER, ordered=True)
+    df = df.sort_values(["Year", race_col])
+
+    color_map = COLOR_MAP
+    years = sorted(df["Year"].dropna().unique().tolist())
+
+    fig, ax = plt.subplots(1, 1, figsize=(9, 6))
+
+    for race in RACE_ORDER:
+        d = df[df[race_col] == race].sort_values("Year")
+        if d.empty or d["Hit Rate"].isna().all():
+            continue
+
+        color    = color_map[race]
+        is_white = race == "White"
+        lw       = 2.8 if is_white else 2.2
+        ls       = "--" if is_white else "-"
+        mew      = 2.0 if is_white else 1.2
+
+        # CI ribbon
+        se_col = "Hit Rate SE"
+        if se_col in d.columns and d[se_col].notna().any():
+            ax.fill_between(
+                d["Year"],
+                d["Hit Rate"] - d[se_col] * 1.96,
+                d["Hit Rate"] + d[se_col] * 1.96,
+                color=color, alpha=0.12, linewidth=0, zorder=2,
+            )
+
+        if is_white:
+            # Dashed line first, no markers
+            ax.plot(
+                d["Year"], d["Hit Rate"],
+                marker="none",
+                linewidth=lw, linestyle=ls,
+                color=color,
+                zorder=3,
+            )
+            # Markers on top with white fill so circle sits above the dashes
+            ax.plot(
+                d["Year"], d["Hit Rate"],
+                marker="o", markersize=11,
+                markerfacecolor="white",
+                markeredgecolor=color,
+                markeredgewidth=mew,
+                linestyle="none",
+                color=color,
+                label=race,
+                zorder=5,
+            )
+        else:
+            ax.plot(
+                d["Year"], d["Hit Rate"],
+                marker="o", markersize=10,
+                markerfacecolor=color,
+                markeredgecolor=color,
+                markeredgewidth=mew,
+                linewidth=lw,
+                linestyle=ls,
+                color=color,
+                label=race,
+                zorder=3,
+            )
+
+    ax.set_xlabel("Year", fontsize=15)
+    ax.set_ylabel("Hit Rate", fontsize=15)
+    ax.set_xticks(years)
+    ax.set_xlim(2021.8, 2024.2)
+    ax.tick_params(labelsize=14)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0%}"))
+    ax.grid(True, alpha=0.3, linestyle=":", linewidth=0.8)
+    ax.set_axisbelow(True)
+
+    ylo, yhi = ax.get_ylim()
+    ax.set_ylim(ylo, yhi + 0.05 * (yhi - ylo))
+
+    # ------------------------------------------------------------------
+    # Legend: vertical, placed on the left side inside the plot
+    # ------------------------------------------------------------------
+    legend_handles = []
+    for race in RACE_ORDER:
+        is_white = race == "White"
+        handle = mlines.Line2D(
+            [0], [0],
+            color=color_map[race],
+            linestyle=(0, (2.1, 2.1)) if is_white else "-",
+            linewidth=3.0 if is_white else 2.5,
+            marker="o",
+            markersize=11,
+            markerfacecolor="white" if is_white else color_map[race],
+            markeredgecolor=color_map[race],
+            markeredgewidth=2.0 if is_white else 1.2,
+            label=race,
+        )
+        legend_handles.append(handle)
+
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.1),
+        ncol=4,
+        frameon=True,
+        fancybox=False,
+        edgecolor="0.8",
+        fontsize=14,
+        handlelength=2.4,
+        handletextpad=0.8,
+        labelspacing=0.8,
+        columnspacing=1.5,
+    )
+    # ------------------------------------------------------------------
+    # Overall title
+    # ------------------------------------------------------------------
+    fig.suptitle(
+        "Contraband Hit Rate by Perceived Race and Year",
+        fontsize=16, fontweight="bold", y=0.99,
+    )
+
+    plt.subplots_adjust(
+        left=0.10, right=0.97,
+        top=0.93, bottom=0.28,
     )
 
     return fig
-
 
 
 def visualize_search_and_hit_rates_by_reason(policing_by_reason):

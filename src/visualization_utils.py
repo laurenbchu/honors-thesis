@@ -953,204 +953,144 @@ def plot_agency_black_white_hit_rates(agency_hit_df):
 
 def create_combined_sensitivity_visualization(baseline_df, mixed_df, multiperson_df):
     """
-    Create a publication-ready two-panel sensitivity figure comparing:
-    - Baseline
-    - Mixed classification
-    - Multiperson stops
+    Two-panel sensitivity figure comparing Baseline, Mixed classification,
+    and Multiperson stops using a dot plot with 95% CI error bars.
 
     Panel A: Conditional Search Rate
     Panel B: Contraband Hit Rate
+
+    Formatting matches other figures in the paper.
     """
+    import matplotlib.lines as mlines
+
+    plt.rcParams.update({
+        "font.size": 13,
+        "axes.titlesize": 14,
+        "axes.labelsize": 13,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
+        "legend.fontsize": 13,
+    })
 
     latest_year = baseline_df["Year"].max()
 
-    baseline = baseline_df[baseline_df["Year"] == latest_year].copy()
-    mixed = mixed_df[mixed_df["Year"] == latest_year].copy()
-    multiperson = multiperson_df[multiperson_df["Year"] == latest_year].copy()
+    race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
 
-    race_order = [
-        "Black/African American",
-        "Hispanic/Latino",
-        "White",
-        "Asian"
+    baseline    = (baseline_df[baseline_df["Year"] == latest_year]
+                   .set_index("Perceived Race").reindex(race_order).reset_index())
+    mixed       = (mixed_df[mixed_df["Year"] == latest_year]
+                   .set_index("Perceived Race").reindex(race_order).reset_index())
+    multiperson = (multiperson_df[multiperson_df["Year"] == latest_year]
+                   .set_index("Perceived Race").reindex(race_order).reset_index())
+
+    conditions = [
+        ("Baseline",    baseline,    SENSITIVITY_COLOR_MAP["Baseline"],    "o",  -0.18),
+        ("Mixed",       mixed,       SENSITIVITY_COLOR_MAP["Mixed"],       "s",   0.00),
+        ("Multiperson", multiperson, SENSITIVITY_COLOR_MAP["Multiperson"], "^",   0.18),
     ]
 
-    baseline = baseline.set_index("Perceived Race").reindex(race_order).reset_index()
-    mixed = mixed.set_index("Perceived Race").reindex(race_order).reset_index()
-    multiperson = multiperson.set_index("Perceived Race").reindex(race_order).reset_index()
-
-    fig, axes = plt.subplots(1, 2, figsize=(20, 7))
-    fig.suptitle(
-        f"Sensitivity Analysis: Baseline vs. Mixed Classification vs. Multiperson Stops ({latest_year})",
-        fontsize=16,
-        fontweight="bold",
-        y=0.98
-    )
-
     x = np.arange(len(race_order))
-    width = 0.24
 
-    baseline_color = SENSITIVITY_COLOR_MAP["Baseline"]
-    mixed_color = SENSITIVITY_COLOR_MAP["Mixed"]
-    multiperson_color = SENSITIVITY_COLOR_MAP["Multiperson"]
+    # ------------------------------------------------------------------
+    # Figure
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), gridspec_kw={"wspace": 0.32})
 
-    def darken_color(color, factor=0.7):
-        rgb = mcolors.to_rgb(color)
-        return tuple(c * factor for c in rgb)
+    panel_specs = [
+        {
+            "ax":       axes[0],
+            "rate_col": "Search Rate",
+            "se_col":   "Search Rate SE",
+            "title":    "(A) Conditional Search Rate",
+            "ylabel":   "Search Rate (%)",
+        },
+        {
+            "ax":       axes[1],
+            "rate_col": "Hit Rate",
+            "se_col":   "Hit Rate SE",
+            "title":    "(B) Contraband Hit Rate",
+            "ylabel":   "Hit Rate (%)",
+        },
+    ]
 
-    # --------------------
-    # Panel A: Search Rate
-    # --------------------
-    base_search = baseline["Search Rate"] * 100
-    mixed_search = mixed["Search Rate"] * 100
-    multi_search = multiperson["Search Rate"] * 100
+    for panel in panel_specs:
+        ax = panel["ax"]
 
-    base_search_se = baseline["Search Rate SE"] * 100 * 1.96
-    mixed_search_se = mixed["Search Rate SE"] * 100 * 1.96
-    multi_search_se = multiperson["Search Rate SE"] * 100 * 1.96
+        for label, df, color, marker, offset in conditions:
+            y    = df[panel["rate_col"]] * 100
+            yerr = df[panel["se_col"]] * 1.96 * 100
 
-    x_base = x - width
-    x_mixed = x
-    x_multi = x + width
+            ax.errorbar(
+                x + offset, y,
+                yerr=yerr,
+                fmt=marker,
+                linestyle="none",
+                markersize=10,
+                markerfacecolor=color,
+                markeredgecolor=color,
+                markeredgewidth=1.2,
+                capsize=4, capthick=1.5, elinewidth=1.8,
+                color=color,
+                label=label,
+                zorder=4,
+            )
 
-    axes[0].bar(
-        x_base,
-        base_search,
-        width,
-        label="Baseline",
-        color=baseline_color,
-        alpha=0.8,
-        yerr=base_search_se,
-        capsize=4,
-        error_kw={"linewidth": 1.5, "alpha": 0.4, "ecolor": darken_color(baseline_color)}
+        ax.set_title(panel["title"], fontsize=14, fontweight="bold", pad=12)
+        ax.set_xlabel("Perceived Race", fontsize=13, labelpad=10)
+        ax.set_ylabel(panel["ylabel"], fontsize=13)
+        ax.set_xticks(x)
+        wrapped_labels = ["Black/African\nAmerican", "Hispanic/\nLatino", "White", "Asian"]
+        ax.set_xticklabels(wrapped_labels, rotation=0, ha="center", fontsize=13)
+        ax.tick_params(labelsize=13)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
+        ax.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
+        ax.set_axisbelow(True)
+        ax.set_xlim(-0.5, len(race_order) - 0.5)
+        ylo, yhi = ax.get_ylim()
+        ax.set_ylim(max(0, ylo), yhi * 1.08)
+
+    # ------------------------------------------------------------------
+    # Suptitle
+    # ------------------------------------------------------------------
+    fig.suptitle(
+        f"Sensitivity Analysis: Baseline vs. Mixed Classification vs. "
+        f"Multiperson Stops ({latest_year})",
+        fontsize=16, fontweight="bold", y=0.99,
     )
 
-    axes[0].bar(
-        x_mixed,
-        mixed_search,
-        width,
-        label="Mixed",
-        color=mixed_color,
-        alpha=0.8,
-        yerr=mixed_search_se,
-        capsize=4,
-        error_kw={"linewidth": 1.5, "alpha": 0.4, "ecolor": darken_color(mixed_color)}
+    # ------------------------------------------------------------------
+    # Legend: single horizontal legend below title
+    # ------------------------------------------------------------------
+    legend_handles = []
+    for label, _, color, marker, _ in conditions:
+        handle = mlines.Line2D(
+            [0], [0],
+            color=color,
+            linestyle="none",
+            marker=marker,
+            markersize=10,
+            markerfacecolor=color,
+            markeredgecolor=color,
+            markeredgewidth=1.2,
+            label=label,
+        )
+        legend_handles.append(handle)
+
+    fig.legend(
+        handles=legend_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.95),
+        ncol=3,
+        frameon=True,
+        fancybox=False,
+        edgecolor="0.8",
+        fontsize=13,
+        handletextpad=0.6,
+        columnspacing=1.5,
     )
 
-    axes[0].bar(
-        x_multi,
-        multi_search,
-        width,
-        label="Multiperson",
-        color=multiperson_color,
-        alpha=0.8,
-        yerr=multi_search_se,
-        capsize=4,
-        error_kw={"linewidth": 1.5, "alpha": 0.4, "ecolor": darken_color(multiperson_color)}
-    )
+    fig.subplots_adjust(top=0.80, bottom=0.18, left=0.07, right=0.98)
 
-    max_y_search = 0
-    for i, xi in enumerate(x):
-        vals = [
-            (x_base[i], base_search.iloc[i], base_search_se.iloc[i], baseline.iloc[i]["Search Count"]),
-            (x_mixed[i], mixed_search.iloc[i], mixed_search_se.iloc[i], mixed.iloc[i]["Search Count"]),
-            (x_multi[i], multi_search.iloc[i], multi_search_se.iloc[i], multiperson.iloc[i]["Search Count"]),
-        ]
-
-        for xpos, val, err, n in vals:
-            if np.isfinite(val):
-                axes[0].text(
-                    xpos, val + err + 0.3,
-                    f"{val:.1f}%\n(n={int(n):,})",
-                    ha="center", va="bottom", fontsize=7, fontweight="bold"
-                )
-                max_y_search = max(max_y_search, val + err + 3)
-
-    axes[0].set_title("(A) Conditional Search Rate", fontsize=13, fontweight="bold", pad=15)
-    axes[0].set_ylabel("Search Rate (%)", fontsize=12, fontweight="bold")
-    axes[0].set_xlabel("Perceived Race", fontsize=12, fontweight="bold")
-    axes[0].set_xticks(x)
-    axes[0].set_xticklabels(race_order, rotation=0, ha="center", fontsize=10)
-    axes[0].legend(fontsize=10, frameon=True, shadow=True)
-    axes[0].grid(True, alpha=0.3, linestyle=":", axis="y")
-    axes[0].set_axisbelow(True)
-    axes[0].set_ylim(0, max_y_search * 1.02)
-
-    # -----------------
-    # Panel B: Hit Rate
-    # -----------------
-    base_hit = baseline["Hit Rate"] * 100
-    mixed_hit = mixed["Hit Rate"] * 100
-    multi_hit = multiperson["Hit Rate"] * 100
-
-    base_hit_se = baseline["Hit Rate SE"] * 100 * 1.96
-    mixed_hit_se = mixed["Hit Rate SE"] * 100 * 1.96
-    multi_hit_se = multiperson["Hit Rate SE"] * 100 * 1.96
-
-    axes[1].bar(
-        x_base,
-        base_hit,
-        width,
-        label="Baseline",
-        color=baseline_color,
-        alpha=0.8,
-        yerr=base_hit_se,
-        capsize=4,
-        error_kw={"linewidth": 1.5, "alpha": 0.4, "ecolor": darken_color(baseline_color)}
-    )
-
-    axes[1].bar(
-        x_mixed,
-        mixed_hit,
-        width,
-        label="Mixed",
-        color=mixed_color,
-        alpha=0.8,
-        yerr=mixed_hit_se,
-        capsize=4,
-        error_kw={"linewidth": 1.5, "alpha": 0.4, "ecolor": darken_color(mixed_color)}
-    )
-
-    axes[1].bar(
-        x_multi,
-        multi_hit,
-        width,
-        label="Multiperson",
-        color=multiperson_color,
-        alpha=0.8,
-        yerr=multi_hit_se,
-        capsize=4,
-        error_kw={"linewidth": 1.5, "alpha": 0.4, "ecolor": darken_color(multiperson_color)}
-    )
-
-    max_y_hit = 0
-    for i, xi in enumerate(x):
-        vals = [
-            (x_base[i], base_hit.iloc[i], base_hit_se.iloc[i], baseline.iloc[i]["Hit Count"]),
-            (x_mixed[i], mixed_hit.iloc[i], mixed_hit_se.iloc[i], mixed.iloc[i]["Hit Count"]),
-            (x_multi[i], multi_hit.iloc[i], multi_hit_se.iloc[i], multiperson.iloc[i]["Hit Count"]),
-        ]
-
-        for xpos, val, err, n in vals:
-            if np.isfinite(val):
-                axes[1].text(
-                    xpos, val + err + 0.5,
-                    f"{val:.1f}%\n(n={int(n):,})",
-                    ha="center", va="bottom", fontsize=7, fontweight="bold"
-                )
-                max_y_hit = max(max_y_hit, val + err + 5)
-
-    axes[1].set_title("(B) Contraband Hit Rate", fontsize=13, fontweight="bold", pad=15)
-    axes[1].set_ylabel("Hit Rate (%)", fontsize=12, fontweight="bold")
-    axes[1].set_xlabel("Perceived Race", fontsize=12, fontweight="bold")
-    axes[1].set_xticks(x)
-    axes[1].set_xticklabels(race_order, rotation=0, ha="center", fontsize=10)
-    axes[1].legend(fontsize=10, frameon=True, shadow=True)
-    axes[1].grid(True, alpha=0.3, linestyle=":", axis="y")
-    axes[1].set_axisbelow(True)
-    axes[1].set_ylim(0, max_y_hit * 1.02)
-
-    plt.tight_layout(rect=[0, 0.05, 1, 0.96])
     return fig
 
 
@@ -1336,15 +1276,31 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
       - 'assault_violence_weapons': 2x2 figure
           Row 1: Assault/Violence (Misdemeanor, Felony)
           Row 2: Weapons (Misdemeanor, Felony)
+          Rows separated by a horizontal divider with section labels.
       - 'dui': 1x2 figure
           DUI (Misdemeanor, Felony)
 
-    Bars are colored by race using COLOR_MAP and include 95% CI error bars.
+    Dot plot with 95% CI error bars, colored by race using COLOR_MAP.
+    Formatting matches other figures in the paper.
     """
+    import matplotlib.lines as mlines
+
+    plt.rcParams.update({
+        "font.size": 13,
+        "axes.titlesize": 14,
+        "axes.labelsize": 13,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
+        "legend.fontsize": 13,
+    })
+
+    Z = 1.96
 
     df = enhancement_by_primary.copy()
 
-    # --- resolve category names exactly as they appear in the data ---
+    # ------------------------------------------------------------------
+    # Resolve category names exactly as they appear in the data
+    # ------------------------------------------------------------------
     available_categories = df["primary_charge_category"].dropna().astype(str).unique().tolist()
 
     def resolve_category_name(target):
@@ -1359,175 +1315,213 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
 
     assault_cat = resolve_category_name("Assault/Violence")
     weapons_cat = resolve_category_name("Weapons")
-    dui_cat = resolve_category_name("DUI")
+    dui_cat     = resolve_category_name("DUI")
 
-    # Optional filtering if user passes a subset
     if top_categories is not None:
         keep = {str(x).strip().lower() for x in top_categories}
         requested = {
             assault_cat.strip().lower(),
             weapons_cat.strip().lower(),
-            dui_cat.strip().lower()
+            dui_cat.strip().lower(),
         }
         use_requested = requested.intersection(keep)
         if use_requested:
-            df = df[df["primary_charge_category"].str.strip().str.lower().isin(use_requested)].copy()
+            df = df[
+                df["primary_charge_category"].str.strip().str.lower().isin(use_requested)
+            ].copy()
 
-    def darken_color(color, factor=0.7):
-        rgb = mcolors.to_rgb(color)
-        return tuple(c * factor for c in rgb)
-
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
     def summarize_category(category_name):
         cat = df[df["primary_charge_category"] == category_name].copy()
-
         summary = (
             cat.groupby(["race_std", "primary_statute_level"], as_index=False)
                .agg({"Enhanced": "sum", "N": "sum"})
         )
-
         if summary.empty:
             return None, None
 
         summary["Enhancement Rate"] = np.where(
             summary["N"] > 0,
             summary["Enhanced"] / summary["N"],
-            np.nan
+            np.nan,
         )
         summary["SE"] = np.where(
             summary["N"] > 0,
-            np.sqrt(summary["Enhancement Rate"] * (1 - summary["Enhancement Rate"]) / summary["N"]),
-            np.nan
+            np.sqrt(
+                summary["Enhancement Rate"] *
+                (1 - summary["Enhancement Rate"]) /
+                summary["N"]
+            ),
+            np.nan,
         )
-
         summary["race_std"] = pd.Categorical(
-            summary["race_std"],
-            categories=RACE_ORDER,
-            ordered=True
+            summary["race_std"], categories=RACE_ORDER, ordered=True
         )
         summary = summary.sort_values(["race_std", "primary_statute_level"])
-
         present_races = [
             r for r in RACE_ORDER
             if r in set(summary["race_std"].dropna().astype(str))
         ]
-
         return summary, present_races
 
     def aligned_arrays(summary, races, statute_level):
-        sub = summary[summary["primary_statute_level"] == statute_level].copy()
+        sub    = summary[summary["primary_statute_level"] == statute_level].copy()
         lookup = {str(row["race_std"]): row for _, row in sub.iterrows()}
 
-        rates = np.array([
-            100 * lookup[r]["Enhancement Rate"] if r in lookup else np.nan
-            for r in races
-        ], dtype=float)
+        rates = np.array(
+            [100 * lookup[r]["Enhancement Rate"] if r in lookup else np.nan
+             for r in races],
+            dtype=float,
+        )
+        ses = np.array(
+            [100 * lookup[r]["SE"] if r in lookup else np.nan
+             for r in races],
+            dtype=float,
+        )
+        ns = np.array(
+            [lookup[r]["N"] if r in lookup else 0 for r in races],
+            dtype=float,
+        )
+        return rates, ses * Z, ns
 
-        ses = np.array([
-            100 * lookup[r]["SE"] if r in lookup else np.nan
-            for r in races
-        ], dtype=float)
-
-        ns = np.array([
-            lookup[r]["N"] if r in lookup else 0
-            for r in races
-        ], dtype=float)
-
-        errs = ses * Z
-        return rates, errs, ns
+    # ------------------------------------------------------------------
+    # Panel drawing — dot plot
+    # ------------------------------------------------------------------
+    short_labels = {
+        "Black/African American": "Black/\nAfrican American",
+        "Hispanic/Latino":        "Hispanic/\nLatino",
+        "White":                  "White",
+        "Asian":                  "Asian",
+    }
 
     def plot_panel(ax, rates, errs, ns, races, panel_title, show_ylabel=False):
         x = np.arange(len(races))
-        colors = [COLOR_MAP.get(r, "#7f7f7f") for r in races]
 
-        heights = np.where(np.isfinite(rates), rates, 0.0)
-        bars = ax.bar(
-            x,
-            heights,
-            color=colors,
-            alpha=0.85,
-            edgecolor="none",
-            linewidth=0
-        )
+        # ------ Pass 1: draw dots and error bars ----------------------
+        for i, race in enumerate(races):
+            if not np.isfinite(rates[i]) or ns[i] == 0:
+                continue
 
-        # Hide truly missing bars rather than showing a visible zero bar
-        for bar, rate in zip(bars, rates):
-            if not np.isfinite(rate):
-                bar.set_alpha(0.0)
+            is_white = race == "White"
+            color    = COLOR_MAP.get(race, "#7f7f7f")
+            mfc      = "white" if is_white else color
+            mew      = 2.0    if is_white else 1.0
 
-        for i, (rate, err, col, n) in enumerate(zip(rates, errs, colors, ns)):
-            if np.isfinite(rate) and n > 0:
-                ax.errorbar(
-                    i, rate,
-                    yerr=err,
-                    fmt="none",
-                    ecolor=darken_color(col),
-                    alpha=0.4,
-                    capsize=5,
-                    capthick=1.5,
-                    linewidth=1.5
+            ax.errorbar(
+                x[i], rates[i],
+                yerr=errs[i],
+                fmt="o",
+                linestyle="none",
+                markersize=13,
+                markerfacecolor=mfc,
+                markeredgecolor=color,
+                markeredgewidth=mew,
+                capsize=4, capthick=1.5, elinewidth=1.8,
+                color=color,
+                zorder=4 if not is_white else 3,
+            )
+
+        # ------ Set y limits before annotations -----------------------
+        finite_tops = [
+            rates[i] + errs[i]
+            for i in range(len(rates))
+            if np.isfinite(rates[i]) and ns[i] > 0
+        ]
+        max_top = max(finite_tops) if finite_tops else 20
+
+        # Cap at 100% for high-rate panels (e.g. DUI misdemeanor ~91-94%)
+        # so y-axis never shows >100%; otherwise use 1.35x for breathing room
+        if max_top > 85:
+            y_upper = 100
+        else:
+            y_upper = max_top * 1.35
+
+        ax.set_ylim(0, y_upper)
+
+        # ------ Pass 2: annotations using actual y range --------------
+        y_range = y_upper
+        offset  = max(y_range * 0.03, 0.5)  # proportional, floor of 0.5pp
+
+        for i, race in enumerate(races):
+            if not np.isfinite(rates[i]) or ns[i] == 0:
+                continue
+
+            annot_y = rates[i] + errs[i] + offset
+
+            # If annotation would exceed y_upper, place it below the dot
+            if annot_y + y_range * 0.08 > y_upper:
+                ax.text(
+                    x[i],
+                    rates[i] - errs[i] - offset,
+                    f"{rates[i]:.1f}%\n(n={int(ns[i]):,})",
+                    ha="center", va="top",
+                    fontsize=13,
+                )
+            else:
+                ax.text(
+                    x[i],
+                    annot_y,
+                    f"{rates[i]:.1f}%\n(n={int(ns[i]):,})",
+                    ha="center", va="bottom",
+                    fontsize=13,
                 )
 
-        ax.set_title(panel_title, fontsize=13, fontweight="bold", pad=15)
-        ax.set_xlabel("Canonical Race", fontsize=12, fontweight="bold")
+        # ------ Axes formatting ---------------------------------------
+        ax.set_title(panel_title, fontsize=14, fontweight="bold", pad=12)
+        ax.set_xlabel("Canonical Race", fontsize=13, labelpad=10)
         if show_ylabel:
-            ax.set_ylabel("Enhancement Rate (%)", fontsize=12, fontweight="bold")
+            ax.set_ylabel("Enhancement Rate (%)", fontsize=13)
 
         ax.set_xticks(x)
-        ax.set_xticklabels(races, rotation=0, ha="center", fontsize=10)
+        ax.set_xticklabels(
+            [short_labels.get(r, r) for r in races],
+            rotation=0, ha="center", fontsize=13,
+        )
+        ax.tick_params(labelsize=13)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
         ax.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
         ax.set_axisbelow(True)
+        ax.set_xlim(-0.5, len(races) - 0.5)
 
-        max_y = 0
-        for i, (rate, err, n) in enumerate(zip(rates, errs, ns)):
-            if np.isfinite(rate) and n > 0:
-                y_pos = rate + err + 0.3
-                ax.text(
-                    i, y_pos,
-                    f"{rate:.1f}%\n(n={int(n):,})",
-                    ha="center",
-                    va="bottom",
-                    fontsize=8,
-                    fontweight="bold"
-                )
-                max_y = max(max_y, y_pos + 2)
+        return max_top
 
-        return max_y
+    # ------------------------------------------------------------------
+    # Legend builder
+    # ------------------------------------------------------------------
+    def add_legend(fig, races):
+        handles = []
+        for race in races:
+            is_white = race == "White"
+            color    = COLOR_MAP.get(race, "#7f7f7f")
+            h = mlines.Line2D(
+                [0], [0],
+                color=color, linestyle="none", marker="o",
+                markersize=11,
+                markerfacecolor="white" if is_white else color,
+                markeredgecolor=color,
+                markeredgewidth=2.0 if is_white else 1.0,
+                label=race,
+            )
+            handles.append(h)
 
-    def make_two_panel_category_figure(category_name, figure_title):
-        summary, races = summarize_category(category_name)
-        if summary is None or not races:
-            return None
-
-        mis_rates, mis_errs, mis_n = aligned_arrays(summary, races, "Misdemeanor")
-        fel_rates, fel_errs, fel_n = aligned_arrays(summary, races, "Felony")
-
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8), gridspec_kw={"wspace": 0.3})
-
-        max_y1 = plot_panel(
-            ax1, mis_rates, mis_errs, mis_n, races,
-            "(A) Misdemeanor Charges",
-            show_ylabel=True
-        )
-        max_y2 = plot_panel(
-            ax2, fel_rates, fel_errs, fel_n, races,
-            "(B) Felony Charges",
-            show_ylabel=False
+        fig.legend(
+            handles=handles,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.93),
+            ncol=len(races),
+            frameon=True,
+            fancybox=False,
+            edgecolor="0.8",
+            fontsize=13,
+            handletextpad=0.6,
+            columnspacing=1.5,
         )
 
-        ymax = min(100, max(max_y1, max_y2) + 2 if max(max_y1, max_y2) > 0 else 100)
-        ax1.set_ylim(0, ymax)
-        ax2.set_ylim(0, ymax)
-
-        fig.suptitle(
-            figure_title,
-            fontsize=15,
-            fontweight="bold",
-            y=0.98
-        )
-        fig.subplots_adjust(left=0.08, right=0.95, top=0.88, bottom=0.17, wspace=0.3)
-
-        return fig
-
+    # ------------------------------------------------------------------
+    # Four-panel figure (Assault/Violence + Weapons)
+    # ------------------------------------------------------------------
     def make_four_panel_combined_figure(cat1, cat2, figure_title):
         summary1, races1 = summarize_category(cat1)
         summary2, races2 = summarize_category(cat2)
@@ -1535,126 +1529,138 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
         if summary1 is None and summary2 is None:
             return None
 
-        fig, axes = plt.subplots(2, 2, figsize=(18, 13), gridspec_kw={"wspace": 0.3, "hspace": 0.4})
+        fig, axes = plt.subplots(
+            2, 2, figsize=(16, 12),
+            gridspec_kw={"wspace": 0.32, "hspace": 0.60},
+        )
         ax1, ax2, ax3, ax4 = axes.flatten()
 
-        # Row 1: Assault/Violence
+        # Row 1
         if summary1 is not None and races1:
             mis_rates, mis_errs, mis_n = aligned_arrays(summary1, races1, "Misdemeanor")
             fel_rates, fel_errs, fel_n = aligned_arrays(summary1, races1, "Felony")
-
-            max_y1 = plot_panel(
-                ax1, mis_rates, mis_errs, mis_n, races1,
-                f"(A) {cat1}: Misdemeanor",
-                show_ylabel=True
-            )
-            max_y2 = plot_panel(
-                ax2, fel_rates, fel_errs, fel_n, races1,
-                f"(B) {cat1}: Felony",
-                show_ylabel=False
-            )
-
-            ymax_row1 = min(100, max(max_y1, max_y2) + 2 if max(max_y1, max_y2) > 0 else 100)
-            ax1.set_ylim(0, ymax_row1)
-            ax2.set_ylim(0, ymax_row1)
+            plot_panel(ax1, mis_rates, mis_errs, mis_n, races1,
+                       "(A) Misdemeanor", show_ylabel=True)
+            plot_panel(ax2, fel_rates, fel_errs, fel_n, races1,
+                       "(B) Felony",      show_ylabel=False)
         else:
-            ax1.axis("off")
-            ax2.axis("off")
+            ax1.axis("off"); ax2.axis("off")
 
-        # Row 2: Weapons
+        # Row 2
         if summary2 is not None and races2:
             mis_rates, mis_errs, mis_n = aligned_arrays(summary2, races2, "Misdemeanor")
             fel_rates, fel_errs, fel_n = aligned_arrays(summary2, races2, "Felony")
-
-            max_y3 = plot_panel(
-                ax3, mis_rates, mis_errs, mis_n, races2,
-                f"(C) {cat2}: Misdemeanor",
-                show_ylabel=True
-            )
-            max_y4 = plot_panel(
-                ax4, fel_rates, fel_errs, fel_n, races2,
-                f"(D) {cat2}: Felony",
-                show_ylabel=False
-            )
-
-            ymax_row2 = min(100, max(max_y3, max_y4) + 2 if max(max_y3, max_y4) > 0 else 100)
-            ax3.set_ylim(0, ymax_row2)
-            ax4.set_ylim(0, ymax_row2)
+            plot_panel(ax3, mis_rates, mis_errs, mis_n, races2,
+                       "(C) Misdemeanor", show_ylabel=True)
+            plot_panel(ax4, fel_rates, fel_errs, fel_n, races2,
+                       "(D) Felony",      show_ylabel=False)
         else:
-            ax3.axis("off")
-            ax4.axis("off")
+            ax3.axis("off"); ax4.axis("off")
 
-        fig.suptitle(
-            figure_title,
-            fontsize=16,
-            fontweight="bold",
-            y=0.98
-        )
-        fig.subplots_adjust(left=0.08, right=0.95, top=0.88, bottom=0.12, wspace=0.3, hspace=0.4)
+        # Row section labels
+        fig.text(0.5, 0.87, cat1, ha="center", va="center",
+                 fontsize=14, fontweight="bold")
+        fig.text(0.5, 0.42, cat2, ha="center", va="center",
+                 fontsize=14, fontweight="bold")
 
+        # Horizontal divider between rows
+        fig.add_artist(plt.Line2D(
+            [0.08, 0.97], [0.46, 0.46],
+            transform=fig.transFigure,
+            color="0.75", linewidth=1.0, linestyle="--",
+        ))
+
+        fig.suptitle(figure_title, fontsize=16, fontweight="bold", y=0.95)
+        add_legend(fig, races1 or races2)
+        fig.subplots_adjust(top=0.82, bottom=0.10, left=0.08, right=0.97)
         return fig
 
+    # ------------------------------------------------------------------
+    # Two-panel figure (DUI)
+    # ------------------------------------------------------------------
+    def make_two_panel_category_figure(category_name, figure_title):
+        summary, races = summarize_category(category_name)
+        if summary is None or not races:
+            return None
+
+        fig, (ax1, ax2) = plt.subplots(
+            1, 2, figsize=(14, 6),
+            gridspec_kw={"wspace": 0.32},
+        )
+
+        mis_rates, mis_errs, mis_n = aligned_arrays(summary, races, "Misdemeanor")
+        fel_rates, fel_errs, fel_n = aligned_arrays(summary, races, "Felony")
+
+        plot_panel(ax1, mis_rates, mis_errs, mis_n, races,
+                   "(A) Misdemeanor Charges", show_ylabel=True)
+        plot_panel(ax2, fel_rates, fel_errs, fel_n, races,
+                   "(B) Felony Charges",      show_ylabel=False)
+
+        fig.suptitle(figure_title, fontsize=16, fontweight="bold", y=0.99)
+        add_legend(fig, races)
+        fig.subplots_adjust(top=0.78, bottom=0.15, left=0.08, right=0.97)
+        return fig
+
+    # ------------------------------------------------------------------
+    # Build and return
+    # ------------------------------------------------------------------
     figs = {}
 
     figs["assault_violence_weapons"] = make_four_panel_combined_figure(
-        assault_cat,
-        weapons_cat,
-        "Enhancement Charge Rate by Race and Statute Level:\nAssault/Violence and Weapons"
+        assault_cat, weapons_cat,
+        "Enhancement Charge Rate by Race and Statute Level",
     )
-
     figs["dui"] = make_two_panel_category_figure(
         dui_cat,
-        "Enhancement Charge Rate by Race and Statute Level:\nDUI"
+        "Enhancement Charge Rate by Race and Statute Level: DUI",
     )
 
     return figs
 
 
-
 def plot_wobbler_combined(df, top_categories=None, sort_by="rate_overall"):
     """
-    Create a combined two-panel figure for wobbler charges:
-    - Panel A: Overall wobbler felony filing rate by race
+    Two-panel wobbler figure:
+    - Panel A: Overall wobbler felony filing rate by race (dot plot with 95% CI)
     - Panel B: Cleveland dot plot by charge category and race
+
+    Formatting matches other figures in the paper.
     """
-    
-    Z_ = globals().get("Z", 1.96)
-    races = list(globals().get("RACE_ORDER", ["Black/African American", "Hispanic/Latino", "White", "Asian"]))
-    color_map = globals().get("COLOR_MAP", {})
-    
-    # Helper: darken a color for error bars
-    def darken(color, factor=0.7):
-        rgb = mcolors.to_rgb(color)
-        return tuple(c * factor for c in rgb)
-    
-    # Calculate figure height based on number of categories for Panel B
+    import matplotlib.lines as mlines
+
+    plt.rcParams.update({
+        "font.size": 13,
+        "axes.titlesize": 14,
+        "axes.labelsize": 13,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
+        "legend.fontsize": 13,
+    })
+
+    Z_      = 1.96
+    races   = list(RACE_ORDER)
+    color_map = COLOR_MAP
+
+    short_labels = {
+        "Black/African American": "Black/\nAfrican American",
+        "Hispanic/Latino":        "Hispanic/\nLatino",
+        "White":                  "White",
+        "Asian":                  "Asian",
+    }
+
     wobblers = df[df["is_wobbler"]].copy()
-    
-    # Determine categories for Panel B
-    if top_categories is not None:
-        g = wobblers.groupby(["charge_category", "race_std", "statute_level"]).size().unstack(fill_value=0).reset_index()
-        for col in ["Felony", "Misdemeanor"]:
-            if col not in g.columns:
-                g[col] = 0
-        g["Total"] = g["Felony"] + g["Misdemeanor"]
-        existing = set(g["charge_category"].unique())
-        categories = [c for c in top_categories if c in existing]
-        n_categories = len(categories)
-    else:
-        g = wobblers.groupby(["charge_category", "race_std", "statute_level"]).size().unstack(fill_value=0).reset_index()
-        for col in ["Felony", "Misdemeanor"]:
-            if col not in g.columns:
-                g[col] = 0
-        g["Total"] = g["Felony"] + g["Misdemeanor"]
-        n_categories = len(g["charge_category"].unique())
-    
-    # Create figure with side-by-side panels
-    fig_height = max(8, 0.35 * n_categories + 2)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, fig_height), gridspec_kw={'wspace': 0.30, 'width_ratios': [1, 1.5]})
-    
-    # ==========================================
-    # PANEL A: Overall Wobbler Felony Rate
-    # ==========================================
+
+    # ------------------------------------------------------------------
+    # Figure
+    # ------------------------------------------------------------------
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2, figsize=(16, 8),
+        gridspec_kw={"wspace": 0.45, "width_ratios": [1, 1.6]},
+    )
+
+    # ==================================================================
+    # PANEL A: Overall wobbler felony filing rate — dot plot
+    # ==================================================================
     summary = (
         wobblers.groupby(["race_std", "statute_level"])
         .size()
@@ -1663,204 +1669,223 @@ def plot_wobbler_combined(df, top_categories=None, sort_by="rate_overall"):
     for col in ["Felony", "Misdemeanor"]:
         if col not in summary.columns:
             summary[col] = 0
-    
-    summary["Total"] = summary["Felony"] + summary["Misdemeanor"]
-    summary["Felony Rate"] = np.where(summary["Total"] > 0, summary["Felony"] / summary["Total"], np.nan)
+
+    summary["Total"]         = summary["Felony"] + summary["Misdemeanor"]
+    summary["Felony Rate"]   = np.where(
+        summary["Total"] > 0, summary["Felony"] / summary["Total"], np.nan
+    )
     summary["Felony Rate SE"] = np.where(
         summary["Total"] > 0,
         np.sqrt(summary["Felony Rate"] * (1 - summary["Felony Rate"]) / summary["Total"]),
         np.nan,
     )
-    
     summary = summary.reindex(races)
-    
-    races_a = summary.index.astype(str).tolist()
-    rates = (summary["Felony Rate"].to_numpy(dtype=float) * 100)
-    ses = (summary["Felony Rate SE"].to_numpy(dtype=float) * 100)
-    ns = summary["Total"].to_numpy(dtype=float)
-    errs = ses * Z_
-    
-    colors = [color_map.get(r, "#7f7f7f") for r in races_a]
-    x = np.arange(len(races_a))
-    
-    ax1.bar(x, np.nan_to_num(rates, nan=0.0), color=colors, alpha=0.85, edgecolor="none", linewidth=0)
-    
-    for i, (rate, err, col, n) in enumerate(zip(rates, errs, colors, ns)):
-        if np.isfinite(rate) and n > 0:
-            ax1.errorbar(i, rate, yerr=err, fmt="none", ecolor=darken(col),
-                        alpha=0.4, capsize=5, capthick=1.5, linewidth=1.5)
-    
-    ax1.set_title("(A) Overall Wobbler Felony Filing Rate by Race",
-                 fontsize=13, fontweight="bold", pad=15)
-    ax1.set_xlabel("Canonical Race", fontsize=11, fontweight="bold")
-    ax1.set_ylabel("Wobbler Charged as Felony (%)", fontsize=11, fontweight="bold")
+
+    rates = summary["Felony Rate"].to_numpy(dtype=float) * 100
+    ses   = summary["Felony Rate SE"].to_numpy(dtype=float) * 100
+    ns    = summary["Total"].to_numpy(dtype=float)
+    errs  = ses * Z_
+    x     = np.arange(len(races))
+
+    for i, race in enumerate(races):
+        if not np.isfinite(rates[i]) or ns[i] == 0:
+            continue
+
+        is_white = race == "White"
+        color    = color_map.get(race, "#7f7f7f")
+
+        ax1.errorbar(
+            x[i], rates[i],
+            yerr=errs[i],
+            fmt="o",
+            linestyle="none",
+            markersize=13,
+            markerfacecolor="white" if is_white else color,
+            markeredgecolor=color,
+            markeredgewidth=2.0 if is_white else 1.0,
+            capsize=4, capthick=1.5, elinewidth=1.8,
+            color=color,
+            zorder=4 if not is_white else 3,
+        )
+
+    # Annotations — set y limits first
+    finite_tops = [rates[i] + errs[i] for i in range(len(rates))
+                   if np.isfinite(rates[i]) and ns[i] > 0]
+    max_top  = max(finite_tops) if finite_tops else 60
+    y_upper  = max_top * 1.35
+    ax1.set_ylim(0, y_upper)
+    offset   = max(y_upper * 0.03, 0.5)
+
+    for i, race in enumerate(races):
+        if not np.isfinite(rates[i]) or ns[i] == 0:
+            continue
+        ax1.text(
+            x[i], rates[i] + errs[i] + offset,
+            f"{rates[i]:.1f}%\n(n={int(ns[i]):,})",
+            ha="center", va="bottom", fontsize=13,
+        )
+
+    ax1.set_title("(A) Overall Felony Filing Rate", fontsize=14,
+                  fontweight="bold", pad=12)
+    ax1.set_xlabel("Canonical Race", fontsize=13, labelpad=10)
+    ax1.set_ylabel("Wobbler Charged as Felony (%)", fontsize=13)
     ax1.set_xticks(x)
-    ax1.set_xticklabels(races_a, fontsize=10)
+    ax1.set_xticklabels([short_labels.get(r, r) for r in races],
+                        rotation=0, ha="center", fontsize=13)
+    ax1.tick_params(labelsize=13)
+    ax1.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
     ax1.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
     ax1.set_axisbelow(True)
-    
-    max_y = 0
-    for i, (rate, err, n) in enumerate(zip(rates, errs, ns)):
-        if np.isfinite(rate) and n > 0:
-            y_pos = rate + err + 0.7
-            ax1.text(i, y_pos, f"{rate:.1f}%\n(n={int(n):,})",
-                    ha="center", va="bottom", fontsize=8, fontweight="bold")
-            max_y = max(max_y, y_pos + 2)
-    
-    pad = 2
-    ymax = max_y if max_y > 0 else 100
-    ax1.set_ylim(0, min(100, ymax + pad))
-    
-    # ==========================================
-    # PANEL B: Cleveland Dot Plot by Category
-    # ==========================================
+    ax1.set_xlim(-0.5, len(races) - 0.5)
+
+    # ==================================================================
+    # PANEL B: Cleveland dot plot by charge category
+    # ==================================================================
     g = (
         wobblers.groupby(["charge_category", "race_std", "statute_level"])
         .size()
         .unstack(fill_value=0)
         .reset_index()
     )
-    
     for col in ["Felony", "Misdemeanor"]:
         if col not in g.columns:
             g[col] = 0
-    
-    g["Total"] = g["Felony"] + g["Misdemeanor"]
+
+    g["Total"]      = g["Felony"] + g["Misdemeanor"]
     g["Felony Rate"] = np.where(g["Total"] > 0, g["Felony"] / g["Total"], np.nan)
-    g["SE"] = np.where(
+    g["SE"]         = np.where(
         g["Total"] > 0,
         np.sqrt(g["Felony Rate"] * (1 - g["Felony Rate"]) / g["Total"]),
         np.nan,
     )
     g["lo"] = (g["Felony Rate"] - Z_ * g["SE"]) * 100
     g["hi"] = (g["Felony Rate"] + Z_ * g["SE"]) * 100
-    g["x"] = g["Felony Rate"] * 100
-    
+    g["x"]  = g["Felony Rate"] * 100
     g = g[g["race_std"].isin(races)].copy()
     g["race_std"] = pd.Categorical(g["race_std"], categories=races, ordered=True)
-    
-    # Determine and sort categories
+
+    # Determine categories
     if top_categories is not None:
-        categories = list(top_categories)
-        existing = set(g["charge_category"].unique())
-        categories = [c for c in categories if c in existing]
-        g = g[g["charge_category"].isin(categories)].copy()
+        existing   = set(g["charge_category"].unique())
+        categories = [c for c in top_categories if c in existing]
+        g          = g[g["charge_category"].isin(categories)].copy()
     else:
-        cat_totals = g.groupby("charge_category")["Total"].sum().sort_values(ascending=False)
-        
         overall_rate = g.groupby("charge_category")[["Felony", "Misdemeanor"]].sum()
         overall_rate["Total"] = overall_rate["Felony"] + overall_rate["Misdemeanor"]
-        overall_rate["Rate"] = np.where(
+        overall_rate["Rate"]  = np.where(
             overall_rate["Total"] > 0,
             overall_rate["Felony"] / overall_rate["Total"],
-            np.nan
+            np.nan,
         )
-        
-        if sort_by == "total":
-            categories = cat_totals.index.tolist()
-        elif sort_by == "rate_overall":
-            categories = overall_rate["Rate"].sort_values(ascending=False).index.tolist()
+        if sort_by == "rate_overall":
+            categories = overall_rate["Rate"].sort_values(ascending=True).index.tolist()
+        elif sort_by == "total":
+            categories = g.groupby("charge_category")["Total"].sum() \
+                          .sort_values(ascending=True).index.tolist()
         elif sort_by == "rate_black":
             blk = g[g["race_std"] == races[0]].set_index("charge_category")["Felony Rate"]
-            categories = blk.sort_values(ascending=False).index.tolist()
+            categories = blk.sort_values(ascending=True).index.tolist()
         else:
-            categories = sorted(cat_totals.index.tolist())
-    
+            categories = sorted(overall_rate.index.tolist())
+
     g = g[g["charge_category"].isin(categories)].copy()
-    categories = list(categories)
-    
-    y_base = np.arange(len(categories))
-    offsets = np.linspace(-0.32, 0.32, num=len(races))
-    
-    ax2.grid(axis="x", alpha=0.15)
-    ax2.set_axisbelow(True)
-    
+
+    y_base  = np.arange(len(categories))
+    offsets = np.linspace(-0.28, 0.28, num=len(races))
+
+    # Alternating row shading
     for i, y0 in enumerate(y_base):
         if i % 2 == 0:
             ax2.axhspan(y0 - 0.5, y0 + 0.5, color="0.95", alpha=1.0, zorder=0)
-    
+
+    ax2.grid(axis="x", alpha=0.35, linestyle=":", linewidth=0.8, zorder=1)
+    ax2.set_axisbelow(True)
+
     for r_i, race in enumerate(races):
-        sub = g[g["race_std"] == race].copy()
-        sub = sub.set_index("charge_category").reindex(categories)
-        y = y_base + offsets[r_i]
-        
+        sub    = g[g["race_std"] == race].set_index("charge_category").reindex(categories)
+        y      = y_base + offsets[r_i]
         x_vals = sub["x"].to_numpy(dtype=float)
-        lo = sub["lo"].to_numpy(dtype=float)
-        hi = sub["hi"].to_numpy(dtype=float)
-        n = sub["Total"].to_numpy(dtype=float)
-        
-        for yi, xi, l, h, nn in zip(y, x_vals, lo, hi, n):
-            if np.isfinite(xi) and nn > 0 and np.isfinite(l) and np.isfinite(h):
-                ax2.hlines(
-                    yi, l, h,
-                    linewidth=1.2,
-                    alpha=0.18,
-                    color=color_map.get(race, "#7f7f7f"),
-                    zorder=2
-                )
-        
-        if race == "White":
-            ax2.scatter(
-                x_vals, y,
-                s=95,
-                label=race,
-                facecolors="none",
-                edgecolors=color_map.get(race, "#7f7f7f"),
-                linewidths=1.6,
-                alpha=0.95,
-                zorder=3,
-            )
-        else:
-            ax2.scatter(
-                x_vals, y,
-                s=95,
-                label=race,
-                color=color_map.get(race, "#7f7f7f"),
-                edgecolors="none",
-                alpha=0.95,
-                zorder=3,
-            )
-    
-    for y in np.arange(-0.5, len(categories), 1):
-        ax2.axhline(y, color="gray", linewidth=0.8, alpha=0.35, zorder=1)
-    
+        lo     = sub["lo"].to_numpy(dtype=float)
+        hi     = sub["hi"].to_numpy(dtype=float)
+        n      = sub["Total"].to_numpy(dtype=float)
+        color  = color_map.get(race, "#7f7f7f")
+        is_white = race == "White"
+
+        # CI lines
+        for yi, l, h, nn in zip(y, lo, hi, n):
+            if np.isfinite(l) and np.isfinite(h) and nn > 0:
+                ax2.hlines(yi, l, h, linewidth=1.5, alpha=0.45,
+                           color=color, zorder=2)
+
+        # Dots
+        ax2.scatter(
+            x_vals, y,
+            s=80,
+            facecolors="white" if is_white else color,
+            edgecolors=color,
+            linewidths=2.0 if is_white else 1.0,
+            alpha=0.95,
+            zorder=3,
+            label=race,
+        )
+
     ax2.set_yticks(y_base)
-    ax2.set_yticklabels(categories, fontsize=11)
+    ax2.set_yticklabels(categories, fontsize=13)
     ax2.invert_yaxis()
-    
-    ax2.set_xlabel("Wobbler Charged as Felony (%)", fontsize=11, fontweight="bold")
-    ax2.set_ylabel("Charge Category", fontsize=11, fontweight="bold")
-    ax2.set_title(
-        "(B) Felony Charging Rate by Charge Category and Race",
-        fontsize=13,
-        fontweight="bold",
-        pad=12,
-    )
-    
+    ax2.set_xlabel("Wobbler Charged as Felony (%)", fontsize=13, labelpad=10)
+    ax2.set_ylabel("", fontsize=13)
+    ax2.set_title("(B) Felony Filing Rate by Charge Category",
+                  fontsize=14, fontweight="bold", pad=12)
+    ax2.tick_params(labelsize=13)
+    ax2.xaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
+
     xmin = np.nanmin(g["lo"].to_numpy(dtype=float))
     xmax = np.nanmax(g["hi"].to_numpy(dtype=float))
     if np.isfinite(xmin) and np.isfinite(xmax):
-        ax2.set_xlim(max(0, xmin - 2), min(100, xmax + 2))
+        ax2.set_xlim(max(0, xmin - 2), min(100, xmax + 5))
     else:
         ax2.set_xlim(0, 100)
-    
-    ax2.legend(
-        title="Canonical Race",
+
+    # ------------------------------------------------------------------
+    # Shared legend — top center, matches other figures
+    # ------------------------------------------------------------------
+    legend_handles = []
+    for race in races:
+        is_white = race == "White"
+        color    = color_map.get(race, "#7f7f7f")
+        h = mlines.Line2D(
+            [0], [0],
+            color=color, linestyle="none", marker="o",
+            markersize=11,
+            markerfacecolor="white" if is_white else color,
+            markeredgecolor=color,
+            markeredgewidth=2.0 if is_white else 1.0,
+            label=race,
+        )
+        legend_handles.append(h)
+
+    fig.legend(
+        handles=legend_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.97),
+        ncol=4,
         frameon=True,
-        fontsize=9,
-        title_fontsize=10,
-        loc="upper left"
+        fancybox=False,
+        edgecolor="0.8",
+        fontsize=13,
+        handletextpad=0.6,
+        columnspacing=1.5,
     )
-    
-    # Overall title
+
+    # ------------------------------------------------------------------
+    # Suptitle
+    # ------------------------------------------------------------------
     fig.suptitle(
-        "Wobbler Charges: Felony Filing Rates by Race and Charge Category\n(with 95% Confidence Intervals)",
-        fontsize=15,
-        fontweight="bold",
-        y=0.995
+        "Wobbler Charges: Felony Filing Rates by Race and Charge Category",
+        fontsize=16, fontweight="bold", y=1.01,
     )
-    
-    plt.tight_layout(rect=[0, 0, 1, 0.99])
+
+    fig.subplots_adjust(top=0.84, bottom=0.12, left=0.07, right=0.98)
 
     return fig
 

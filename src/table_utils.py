@@ -831,76 +831,97 @@ def export_reason_for_contact_table_to_latex(table_df):
 def export_agency_hit_rates_to_latex(agency_hit_df):
     """
     Export agency-level Black vs White hit rate comparison table to LaTeX.
+    Agencies excluded from the scatter plot (Black n < 30 or Black 95% CI > ±20pp)
+    are flagged with a dagger (†).
     """
-    
+
     os.makedirs("../output/tables", exist_ok=True)
-    
-    # Work with the original data to calculate standard errors
+
     df = agency_hit_df.copy()
-    
-    # Calculate standard errors for hit rates using binomial proportion formula: SE = sqrt(p(1-p)/n)
+
+    # ------------------------------------------------------------------
+    # Standard errors
+    # ------------------------------------------------------------------
     df["White_Hit_Rate_SE"] = np.sqrt(
         df["White_Hit_Rate"] * (1 - df["White_Hit_Rate"]) / df["White_Search_Count"]
     )
-    
     df["Black_Hit_Rate_SE"] = np.sqrt(
         df["Black_Hit_Rate"] * (1 - df["Black_Hit_Rate"]) / df["Black_Search_Count"]
     )
-    
-    # Sort by agency name
+    df["Black_CI_Width"] = df["Black_Hit_Rate_SE"] * 1.96 * 100
+
+    # ------------------------------------------------------------------
+    # Exclusion flag (matches plot_agency_black_white_hit_rates criteria)
+    # ------------------------------------------------------------------
+    df["Excluded"] = (
+        (df["Black_Search_Count"] < 30) |
+        (df["Black_CI_Width"] > 20)
+    )
+
+    # ------------------------------------------------------------------
+    # Sort alphabetically
+    # ------------------------------------------------------------------
     df = df.sort_values("agency_name").reset_index(drop=True)
-    
-    # Build LaTeX table manually for better control
+
+    # ------------------------------------------------------------------
+    # Build LaTeX
+    # ------------------------------------------------------------------
     latex = []
     latex.append(r"\begin{table}[htbp]")
     latex.append(r"\centering")
-    latex.append(r"\caption{Agency-Level Comparison: White vs. Black/African American Hit Rates}")
+    latex.append(r"\caption{Agency-Level Comparison: White vs.\ Black/African American Hit Rates}")
     latex.append(r"\label{tab:agency_hit_rates}")
     latex.append(r"\begin{tabular}{l rr rr}")
     latex.append(r"\toprule")
-    latex.append(r" & \multicolumn{2}{c}{White} & \multicolumn{2}{c}{Black/African American} \\")
+    latex.append(
+        r" & \multicolumn{2}{c}{White} & "
+        r"\multicolumn{2}{c}{Black/African American} \\"
+    )
     latex.append(r"\cmidrule(lr){2-3} \cmidrule(lr){4-5}")
     latex.append(r"Agency & Searches & Hit Rate (\%) & Searches & Hit Rate (\%) \\")
     latex.append(r"\midrule")
-    
-    # Add data rows with hit rates formatted with 95% CI
+
     for _, row in df.iterrows():
-        agency = row["agency_name"]
-        
+        # Dagger if excluded from figure
+        dagger = r"\textsuperscript{\dag}" if row["Excluded"] else ""
+        agency = f"{row['agency_name']}{dagger}"
+
         w_searches = int(row["White_Search_Count"])
-        w_rate = row["White_Hit_Rate"] * 100
-        w_se = row["White_Hit_Rate_SE"] * 100
-        w_ci = 1.96 * w_se
-        
+        w_rate     = row["White_Hit_Rate"] * 100
+        w_ci       = row["White_Hit_Rate_SE"] * 1.96 * 100
+
         b_searches = int(row["Black_Search_Count"])
-        b_rate = row["Black_Hit_Rate"] * 100
-        b_se = row["Black_Hit_Rate_SE"] * 100
-        b_ci = 1.96 * b_se
-        
+        b_rate     = row["Black_Hit_Rate"] * 100
+        b_ci       = row["Black_CI_Width"]
+
         latex.append(
             f"{agency} & {w_searches:,} & "
             f"{w_rate:.1f} ({{\\scriptsize $\\pm${w_ci:.1f}}}) & "
             f"{b_searches:,} & "
             f"{b_rate:.1f} ({{\\scriptsize $\\pm${b_ci:.1f}}}) \\\\"
         )
-    
+
     latex.append(r"\bottomrule")
     latex.append(r"\end{tabular}")
     latex.append(r"\smallskip")
     latex.append(
-        r"\parbox{\textwidth}{\footnotesize \textit{Note:} Hit rates represent the proportion "
-        r"of searches that resulted in contraband being found, with 95\% confidence intervals "
-        r"shown in parentheses ($\pm 1.96$ SE). Only agencies with at least 5 searches for both "
-        r"White and Black/African American individuals are included.}"
+        r"\parbox{\textwidth}{\footnotesize"
+        r" \textit{Note:} Hit rates represent the proportion of discretionary searches "
+        r"that recovered contraband, with 95\% confidence intervals shown in parentheses "
+        r"($\pm 1.96$ SE). Only agencies with at least 5 searches for both White and "
+        r"Black/African American individuals are included in this table. "
+        r"\textsuperscript{\dag} Agency excluded from Figure~\ref{fig:agency_hit} due to "
+        r"fewer than 30 Black/African American searches or a 95\% confidence interval "
+        r"exceeding $\pm$20 percentage points.}"
     )
     latex.append(r"\end{table}")
-    
-    # Write to file
+
     latex_str = "\n".join(latex)
     with open("../output/tables/agency_hits.tex", "w", encoding="utf-8") as f:
         f.write(latex_str)
-    
-    print("Table exported: agency_hits.tex")
+
+    print(f"Table exported: agency_hits.tex "
+          f"({df['Excluded'].sum()} agencies flagged with dagger)")
     return latex_str
 
 

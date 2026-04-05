@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import matplotlib.colors as mcolors
-
 from matplotlib.ticker import FuncFormatter
+import matplotlib.lines as mlines
 
 # ------------------------------------------------------------------
 # Plotting and visualization utilities
@@ -41,6 +41,7 @@ def _safe_visualization_setup(df, race_col):
     return out
 
 
+
 def plot_policing_by_year(policing_analysis):
     """
     Two-row summary figure:
@@ -48,7 +49,6 @@ def plot_policing_by_year(policing_analysis):
       Bottom row -- by-year line plots (with CI ribbons for rates)
     White group: dashed line, hollow circle markers throughout.
     """
-    import matplotlib.lines as mlines
 
     plt.rcParams.update({
         "font.size": 13,
@@ -367,6 +367,7 @@ def plot_policing_by_year(policing_analysis):
     return fig
 
 
+
 def plot_hit_rate_by_year(policing_analysis):
     """
     1x2 figure of contraband hit rates by perceived race.
@@ -376,7 +377,6 @@ def plot_hit_rate_by_year(policing_analysis):
 
     Formatting matches visualize_search_and_hit_rates_by_reason.
     """
-    import matplotlib.lines as mlines
 
     plt.rcParams.update({
         "font.size": 13,
@@ -573,8 +573,6 @@ def plot_hit_rate_by_year(policing_analysis):
 
 
 def visualize_search_and_hit_rates_by_reason(policing_by_reason):
-    import matplotlib.lines as mlines
-
     plt.rcParams.update({
         "font.size": 13,
         "axes.titlesize": 14,
@@ -764,189 +762,241 @@ def visualize_search_and_hit_rates_by_reason(policing_by_reason):
     return fig
 
 
-def plot_agency_black_white_hit_rates(agency_hit_df):
-    """
-    Publication-ready scatter plot comparing White and Black hit rates by agency.
 
-    Exclusion criteria (Option 3):
+def plot_agency_black_white_rates(agency_df):
+    """
+    Two-panel publication-ready scatter plot comparing White and Black
+    search rates (Panel A) and hit rates (Panel B) by agency.
+
+    Exclusion criteria applied consistently across both panels:
     - Agencies with fewer than 30 Black searches excluded
     - Agencies with Black hit rate 95% CI > ±20 percentage points excluded
 
-    Improvements:
-    - Legend uses scatter handles (circles) instead of patches (squares)
-    - Dot size scaled by Avg_Search_Count
-    - Above/below diagonal counts annotated in corner
-    - Subtitle noting dot size meaning
-    - All font sizes >= 13
-    - UC Irvine PD excluded via criteria above
+    Panel A: White vs Black conditional search rate (searches/stops)
+    Panel B: White vs Black contraband hit rate (hits/searches)
+    Points above the 45-degree parity line indicate higher Black rates.
+    X and Y axes scale independently to maximize plotting area.
     """
-    from adjustText import adjust_text
 
-    d = agency_hit_df.copy()
+    plt.rcParams.update({
+        "font.size":        13,
+        "axes.titlesize":   15,
+        "axes.labelsize":   14,
+        "xtick.labelsize":  13,
+        "ytick.labelsize":  13,
+        "legend.fontsize":  13,
+    })
 
-    # ------------------------------------------------------------------
-    # Compute Black CI width for exclusion
-    # ------------------------------------------------------------------
+    d = agency_df.copy()
+
+    # ── Compute CIs for exclusion ─────────────────────────────────────
     d["Black_Hit_Rate_SE"] = np.where(
         d["Black_Search_Count"] > 0,
         np.sqrt(
-            d["Black_Hit_Rate"] * (1 - d["Black_Hit_Rate"]) / d["Black_Search_Count"]
+            d["Black_Hit_Rate"] *
+            (1 - d["Black_Hit_Rate"]) /
+            d["Black_Search_Count"]
         ),
         np.nan,
     )
-    d["Black_CI_Width"] = d["Black_Hit_Rate_SE"] * 1.96 * 100  # in percentage points
+    d["Black_CI_Width"] = d["Black_Hit_Rate_SE"] * 1.96 * 100
 
-    # ------------------------------------------------------------------
-    # Apply exclusion criteria (Option 3): n >= 30 AND CI <= ±20pp
-    # ------------------------------------------------------------------
-    n_total = len(d)
+    # ── Apply exclusion criteria ──────────────────────────────────────
     d = d[
         (d["Black_Search_Count"] >= 30) &
         (d["Black_CI_Width"] <= 20)
     ].reset_index(drop=True)
-    n_excluded = n_total - len(d)
 
-    x = d["White_Hit_Rate"] * 100
-    y = d["Black_Hit_Rate"] * 100
-
-    # ------------------------------------------------------------------
-    # Dot size scaled by average search count
-    # ------------------------------------------------------------------
+    # ── Dot sizing ────────────────────────────────────────────────────
     sizes = 80 + 6.0 * np.sqrt(d["Avg_Search_Count"])
 
-    # ------------------------------------------------------------------
-    # Colors
-    # ------------------------------------------------------------------
-    colors = np.where(y > x, "#009E73", "#D55E00")
-
-    # ------------------------------------------------------------------
-    # Figure
-    # ------------------------------------------------------------------
-    fig, ax = plt.subplots(figsize=(12, 12))
-
-    ax.scatter(
-        x, y,
-        s=sizes,
-        alpha=0.75,
-        c=colors,
-        edgecolor="white",
-        linewidth=1.5,
-        zorder=3,
+    # ── Figure: two panels side by side ──────────────────────────────
+    fig, (ax1, ax2) = plt.subplots(
+        1, 2,
+        figsize=(22, 10),
+        gridspec_kw={"wspace": 0},
     )
 
-    # Parity line
-    max_val = max(5, np.nanmax(np.concatenate([x.to_numpy(), y.to_numpy()])) + 5)
-    min_val = max(0, np.nanmin(np.concatenate([x.to_numpy(), y.to_numpy()])) - 2)
+    # ── Helper: draw one scatter panel ───────────────────────────────
+    def draw_panel(ax, x_vals, y_vals, panel_title, xlabel, ylabel, panel_label, manual_offsets=None):
 
-    ax.plot(
-        [min_val, max_val], [min_val, max_val],
-        linestyle="--", linewidth=2.5,
-        color="gray", alpha=0.5,
-        zorder=2,
-    )
+        colors = np.where(y_vals > x_vals, "#009E73", "#D55E00")
 
-    # ------------------------------------------------------------------
-    # Labels with adjustText
-    # ------------------------------------------------------------------
-    texts = []
-    for _, row in d.iterrows():
-        xi = row["White_Hit_Rate"] * 100
-        yi = row["Black_Hit_Rate"] * 100
-        texts.append(
-            ax.text(xi, yi, row["agency_name"],
-                    fontsize=13, alpha=0.9, zorder=4,
-                    ha="center", va="center")
+        ax.scatter(
+            x_vals, y_vals,
+            s=sizes,
+            alpha=0.75,
+            c=colors,
+            edgecolor="white",
+            linewidth=1.5,
+            zorder=3,
         )
 
-    adjust_text(
-        texts,
-        x=x.values,
-        y=y.values,
-        ax=ax,
-        expand_points=(1.8, 1.8),
-        expand_text=(1.5, 1.5),
-        force_points=(0.4, 0.4),
-        force_text=(0.8, 0.8),
-        lim=500,
+        # ── Independent axis limits with 8% headroom ─────────────────
+        x_max = np.nanmax(x_vals) * 1.08
+        y_max = np.nanmax(y_vals) * 1.08
+        max_val = max(x_max, y_max)
+
+        # Parity line drawn to whichever axis limit is smaller
+        ax.plot(
+            [0, max_val], [0, max_val],
+            linestyle="--", linewidth=2.5,
+            color="gray", alpha=0.5, zorder=2,
+        )
+
+        ax.set_xlim(0, max_val)
+        ax.set_ylim(0, max_val)
+        ax.set_aspect("equal", adjustable="box")
+
+        # ── Agency labels ─────────────────────────────────────────────
+        for _, row in d.iterrows():
+            xi = x_vals[row.name]
+            yi = y_vals[row.name]
+            ax.annotate(
+                row["agency_name"],
+                xy=(xi, yi),
+                xytext=(5, 5),
+                textcoords="offset points",
+                fontsize=11,
+                alpha=0.9,
+                zorder=4,
+            )
+
+        # Apply manual offset corrections if provided
+        if manual_offsets:
+            for txt in ax.texts:
+                name = txt.get_text()
+                if name in manual_offsets:
+                    dx, dy = manual_offsets[name]
+                    x0, y0 = txt.get_position()
+                    txt.set_position((x0 + dx, y0 + dy))
+
+        # ── Above/below counts ────────────────────────────────────────
+        n_above = int((y_vals > x_vals).sum())
+        n_below = int((y_vals <= x_vals).sum())
+        n_label_above = "agency" if n_above == 1 else "agencies"
+        n_label_below = "agency" if n_below == 1 else "agencies"
+
+        ax.text(
+            0.97, 0.05,
+            f"{n_below} {n_label_below}: White rate > Black\n"
+            f"{n_above}  {n_label_above}: Black rate > White",
+            transform=ax.transAxes,
+            ha="right", va="bottom",
+            fontsize=13, color="dimgray",
+            linespacing=1.6,
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="white",
+                      edgecolor="0.8", alpha=0.85),
+        )
+
+        # ── Panel label ───────────────────────────────────────────────
+        ax.text(
+            0.03, 0.97, panel_label,
+            transform=ax.transAxes,
+            ha="left", va="top",
+            fontsize=15, fontweight="bold",
+        )
+
+        # ── Dot-size subtitle ─────────────────────────────────────────
+        ax.text(
+            0.5, 0.997,
+            "Dot size proportional to average searches (2022–2024)",
+            transform=ax.transAxes, ha="center", va="top",
+            fontsize=12, color="dimgray", style="italic",
+        )
+
+        # ── Axes formatting ───────────────────────────────────────────
+        ax.set_xlabel(xlabel, fontsize=14, fontweight="bold", labelpad=10)
+        ax.set_ylabel(ylabel, fontsize=14, fontweight="bold", labelpad=10)
+        ax.set_title(panel_title, fontsize=15, fontweight="bold", pad=16)
+        ax.tick_params(labelsize=13)
+        ax.grid(alpha=0.3, linestyle=":", linewidth=0.5, zorder=1)
+        ax.set_axisbelow(True)
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.0f}%"))
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
+
+    # ── Panel A: Search rates ─────────────────────────────────────────
+    draw_panel(
+        ax1,
+        x_vals      = (d["White_Search_Rate"] * 100).to_numpy(),
+        y_vals      = (d["Black_Search_Rate"]  * 100).to_numpy(),
+        panel_title = "Search Rate by Agency\n(Conditional on Stop)",
+        xlabel      = "White Search Rate (%)",
+        ylabel      = "Black/African American Search Rate (%)",
+        panel_label = "(A)",
+        manual_offsets = {
+            "Tustin PD":    (-60, -15),
+            "Cypress PD":  (5, -5),
+            "Laguna Beach PD": (-80, 2),
+            "Costa Mesa PD": (-80, -20),
+            "Irvine PD": (0, -20),
+            "Orange PD": (-70, 0),
+            "Santa Ana PD": (2, -15),
+            "Newport Beach PD": (4, -7),
+            "Huntington Beach PD": (-120, 1),
+        }
     )
 
-    # ------------------------------------------------------------------
-    # Above / below diagonal counts
-    # ------------------------------------------------------------------
-    n_above = int((y > x).sum())
-    n_below = int((y <= x).sum())
-
-    ax.text(
-        0.97, 0.05,
-        f"{n_below} agencies: White hit rate > Black\n"
-        f"{n_above}  agencies: Black hit rate > White",
-        transform=ax.transAxes,
-        ha="right", va="bottom",
-        fontsize=13, color="dimgray",
-        linespacing=1.6,
-        bbox=dict(boxstyle="round,pad=0.4", facecolor="white",
-                  edgecolor="0.8", alpha=0.85),
+    # ── Panel B: Hit rates ────────────────────────────────────────────
+    draw_panel(
+        ax2,
+        x_vals      = (d["White_Hit_Rate"] * 100).to_numpy(),
+        y_vals      = (d["Black_Hit_Rate"]  * 100).to_numpy(),
+        panel_title = "Contraband Hit Rate by Agency\n(Outcome Test for Searches)",
+        xlabel      = "White Hit Rate (%)",
+        ylabel      = "Black/African American Hit Rate (%)",
+        panel_label = "(B)",
+        manual_offsets = {
+            "Santa Ana PD":  (-80, 0),
+            "Tustin PD":    (5, -10),
+            "Buena Park PD": (-80, 0),
+            "Orange County Sheriff's Office": (5, -5),
+            "Newport Beach PD": (-100, -20),
+        },
     )
 
-    # ------------------------------------------------------------------
-    # Axes formatting
-    # ------------------------------------------------------------------
-    ax.set_xlabel("White Hit Rate (%)", fontsize=14, fontweight="bold", labelpad=10)
-    ax.set_ylabel("Black/African American Hit Rate (%)", fontsize=14,
-                  fontweight="bold", labelpad=10)
-    ax.set_title(
-        "Agency-Level Comparison: White vs. Black Hit Rates\n"
-        "(Outcome Test for Searches)",
-        fontsize=16, fontweight="bold", pad=20,
-    )
-
-    # Subtitle noting dot size
-    ax.text(
-        0.5, 0.995,
-        "Dot size proportional to average annual searches",
-        transform=ax.transAxes, ha="center", va="top",
-        fontsize=13, color="dimgray", style="italic",
-    )
-
-    ax.tick_params(labelsize=13)
-    ax.grid(alpha=0.3, linestyle=":", linewidth=0.5, zorder=1)
-    ax.set_axisbelow(True)
-    ax.set_xlim(min_val, max_val)
-    ax.set_ylim(min_val, max_val)
-    ax.set_aspect("equal", adjustable="box")
-
-    # ------------------------------------------------------------------
-    # Legend: scatter handles (circles) instead of patches (squares)
-    # ------------------------------------------------------------------
+    # ── Shared legend ─────────────────────────────────────────────────
     legend_handles = [
         plt.Line2D([0], [0], linestyle="--", linewidth=2.5,
-                   color="gray", alpha=0.5, label="Equal Hit Rates"),
-        ax.scatter([], [], s=100, c="#009E73", alpha=0.75,
-                   edgecolor="white", linewidth=1.5,
-                   label="Black Hit Rate > White"),
-        ax.scatter([], [], s=100, c="#D55E00", alpha=0.75,
-                   edgecolor="white", linewidth=1.5,
-                   label="White Hit Rate > Black"),
-        # Size reference
-        ax.scatter([], [], s=80 + 6.0 * np.sqrt(50),   c="gray", alpha=0.5,
-                   edgecolor="white", linewidth=1.5, label="Avg. searches ≈ 50"),
-        ax.scatter([], [], s=80 + 6.0 * np.sqrt(200),  c="gray", alpha=0.5,
-                   edgecolor="white", linewidth=1.5, label="Avg. searches ≈ 200"),
-        ax.scatter([], [], s=80 + 6.0 * np.sqrt(500),  c="gray", alpha=0.5,
-                   edgecolor="white", linewidth=1.5, label="Avg. searches ≈ 500"),
+                   color="gray", alpha=0.5, label="Equal Rates"),
+        ax1.scatter([], [], s=100, c="#009E73", alpha=0.75,
+                    edgecolor="white", linewidth=1.5,
+                    label="Black Rate > White"),
+        ax1.scatter([], [], s=100, c="#D55E00", alpha=0.75,
+                    edgecolor="white", linewidth=1.5,
+                    label="White Rate > Black"),
+        ax1.scatter([], [], s=80 + 6.0 * np.sqrt(50),  c="gray",
+                    alpha=0.5, edgecolor="white", linewidth=1.5,
+                    label="Avg. searches ≈ 50"),
+        ax1.scatter([], [], s=80 + 6.0 * np.sqrt(200), c="gray",
+                    alpha=0.5, edgecolor="white", linewidth=1.5,
+                    label="Avg. searches ≈ 200"),
+        ax1.scatter([], [], s=80 + 6.0 * np.sqrt(500), c="gray",
+                    alpha=0.5, edgecolor="white", linewidth=1.5,
+                    label="Avg. searches ≈ 500"),
     ]
 
-    ax.legend(
+    fig.suptitle(
+        "Agency-Level Comparison: White vs. Black/African American "
+        "Search and Hit Rates",
+        fontsize=16, fontweight="bold", y=0.98,
+    )
+
+    fig.legend(
         handles=legend_handles,
-        fontsize=13,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.96),
+        ncol=6,
         frameon=True,
         fancybox=False,
         edgecolor="0.8",
-        loc="upper left",
-        labelspacing=0.8,
+        fontsize=13,
+        handletextpad=0.6,
+        columnspacing=1.2,
     )
 
-    plt.tight_layout()
+    fig.subplots_adjust(top=0.84, bottom=0.06, left=0.07, right=0.97)
+
     return fig
 
 
@@ -958,10 +1008,7 @@ def create_combined_sensitivity_visualization(baseline_df, mixed_df, multiperson
 
     Panel A: Conditional Search Rate
     Panel B: Contraband Hit Rate
-
-    Formatting matches other figures in the paper.
     """
-    import matplotlib.lines as mlines
 
     plt.rcParams.update({
         "font.size": 13,
@@ -1283,7 +1330,6 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
     Dot plot with 95% CI error bars, colored by race using COLOR_MAP.
     Formatting matches other figures in the paper.
     """
-    import matplotlib.lines as mlines
 
     plt.rcParams.update({
         "font.size": 13,
@@ -1315,7 +1361,7 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
 
     assault_cat = resolve_category_name("Assault/Violence")
     weapons_cat = resolve_category_name("Weapons")
-    dui_cat     = resolve_category_name("DUI")
+    dui_cat     = resolve_category_name("Obstruct/Resist Officer")
 
     if top_categories is not None:
         keep = {str(x).strip().lower() for x in top_categories}
@@ -1610,12 +1656,197 @@ def plot_enhancement_rate_by_race_statute_category(enhancement_by_primary, top_c
         assault_cat, weapons_cat,
         "Enhancement Charge Rate by Race and Statute Level",
     )
-    figs["dui"] = make_two_panel_category_figure(
-        dui_cat,
-        "Enhancement Charge Rate by Race and Statute Level: DUI",
-    )
 
     return figs
+
+
+
+def plot_enhancement_by_statute(statute_rate_by_race, focus_statutes, statute_descriptions,
+                                total_cases_by_race):
+    """
+    Dot plot of enhancement rates by statute and race, matching the
+    existing figure style in the paper. One panel per statute arranged
+    horizontally, with 95% CI error bars. Y-axes are shared across panels.
+    """
+
+    plt.rcParams.update({
+        "font.size":        13,
+        "axes.titlesize":   14,
+        "axes.labelsize":   13,
+        "xtick.labelsize":  13,
+        "ytick.labelsize":  13,
+        "legend.fontsize":  13,
+    })
+
+    Z = 1.96
+
+    short_labels = {
+        "Black/African American": "Black/\nAfrican American",
+        "Hispanic/Latino":        "Hispanic/\nLatino",
+        "White":                  "White",
+        "Asian":                  "Asian",
+    }
+
+    races      = [r for r in RACE_ORDER if r != "Other"]
+    n_panels   = len(focus_statutes)
+    total_lookup = (
+        total_cases_by_race
+        .set_index("race_std")["total_cases"]
+        .to_dict()
+    )
+
+    fig, axes = plt.subplots(
+        1, n_panels,
+        figsize=(7 * n_panels, 7),
+        gridspec_kw={"wspace": 0.32},
+    )
+    if n_panels == 1:
+        axes = [axes]
+
+    # ── First pass: draw all panels, collect y maxima ─────────────────
+    panel_max_tops = []
+
+    for ax, statute, panel_letter in zip(axes, focus_statutes, "ABCDEFG"):
+
+        sub = (
+            statute_rate_by_race[
+                (statute_rate_by_race["statute_normalized"] == statute) &
+                (statute_rate_by_race["race_std"].isin(races))
+            ]
+            .set_index("race_std")
+            .reindex(races)
+        )
+
+        rates = sub["rate"].to_numpy(dtype=float) * 100
+        ses   = sub["se"].to_numpy(dtype=float)  * 100
+        ns    = sub["cases_with_statute"].to_numpy(dtype=float)
+        errs  = ses * Z
+        x     = np.arange(len(races))
+
+        # Dots and error bars
+        for i, race in enumerate(races):
+            if not np.isfinite(rates[i]) or ns[i] == 0:
+                continue
+
+            is_white = race == "White"
+            color    = COLOR_MAP.get(race, "#7f7f7f")
+
+            ax.errorbar(
+                x[i], rates[i],
+                yerr=errs[i],
+                fmt="o",
+                linestyle="none",
+                markersize=13,
+                markerfacecolor="white" if is_white else color,
+                markeredgecolor=color,
+                markeredgewidth=2.0 if is_white else 1.0,
+                capsize=4, capthick=1.5, elinewidth=1.8,
+                color=color,
+                zorder=4 if not is_white else 3,
+            )
+
+        finite_tops = [
+            rates[i] + errs[i]
+            for i in range(len(races))
+            if np.isfinite(rates[i]) and ns[i] > 0
+        ]
+        panel_max_tops.append(max(finite_tops) if finite_tops else 0.1)
+
+        # Store data on axis for annotation pass
+        ax._statute_data = {
+            "rates": rates, "errs": errs, "ns": ns,
+            "races": races, "statute": statute,
+            "panel_letter": panel_letter,
+        }
+
+        # Axes formatting
+        description = statute_descriptions.get(statute, statute)
+        ax.set_title(
+            f"({panel_letter}) {statute}\n{description}",
+            fontsize=14, fontweight="bold", pad=12,
+        )
+        ax.set_xlabel("Canonical Race", fontsize=13, labelpad=10)
+        ax.set_xticks(x)
+        ax.set_xticklabels(
+            [short_labels.get(r, r) for r in races],
+            rotation=0, ha="center", fontsize=13,
+        )
+        ax.tick_params(labelsize=13)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.1f}%"))
+        ax.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
+        ax.set_axisbelow(True)
+        ax.set_xlim(-0.5, len(races) - 0.5)
+
+    # ── Shared y-axis across all panels ───────────────────────────────
+    global_max = max(panel_max_tops)
+    y_upper    = global_max * 1.6
+
+    for ax in axes:
+        ax.set_ylim(0, y_upper)
+
+    # ── Shared y-axis label ───────────────────────────────────────────
+    fig.supylabel("Enhancement Rate (%)", fontsize=13, x=0.01)
+
+    # ── Second pass: annotations (after y limits are fixed) ───────────
+    offset = max(y_upper * 0.03, 0.01)
+
+    for ax in axes:
+        d      = ax._statute_data
+        rates  = d["rates"]
+        errs   = d["errs"]
+        ns     = d["ns"]
+        races_ = d["races"]
+
+        for i, race in enumerate(races_):
+            if not np.isfinite(rates[i]) or ns[i] == 0:
+                continue
+
+            denom = int(total_lookup.get(race, 0))
+            label = f"{rates[i]:.2f}%\n(n={int(ns[i])})"
+
+            ax.text(
+                i,
+                rates[i] + errs[i] + offset,
+                label,
+                ha="center", va="bottom", fontsize=11,
+            )
+
+    # ── Shared legend ─────────────────────────────────────────────────
+    legend_handles = []
+    for race in races:
+        is_white = race == "White"
+        color    = COLOR_MAP.get(race, "#7f7f7f")
+        h = mlines.Line2D(
+            [0], [0],
+            color=color, linestyle="none", marker="o", markersize=11,
+            markerfacecolor="white" if is_white else color,
+            markeredgecolor=color,
+            markeredgewidth=2.0 if is_white else 1.0,
+            label=race,
+        )
+        legend_handles.append(h)
+
+    fig.legend(
+        handles=legend_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.97),
+        ncol=len(races),
+        frameon=True,
+        fancybox=False,
+        edgecolor="0.8",
+        fontsize=13,
+        handletextpad=0.6,
+        columnspacing=1.5,
+    )
+
+    fig.suptitle(
+        "Enhancement Rate by Statute and Race",
+        fontsize=18, fontweight="bold", y=1.02,
+    )
+
+    fig.subplots_adjust(top=0.78, bottom=0.15, left=0.08, right=0.97)
+    return fig
+
 
 
 def plot_wobbler_combined(df, top_categories=None, sort_by="rate_overall"):
@@ -1626,7 +1857,6 @@ def plot_wobbler_combined(df, top_categories=None, sort_by="rate_overall"):
 
     Formatting matches other figures in the paper.
     """
-    import matplotlib.lines as mlines
 
     plt.rcParams.update({
         "font.size": 13,

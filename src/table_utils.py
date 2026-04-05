@@ -60,20 +60,7 @@ def create_reason_for_contact_table(policing_by_reason):
     """
     Create a comprehensive table with stop reason, race, counts, and rates with 95% CIs.
     Each reason for contact is shown only once with race categories as rows beneath it.
-    
-    Parameters
-    ----------
-    policing_by_reason : dict
-        Dictionary mapping reason_for_contact -> rates DataFrame
-        (output from rates_utils.policing_rates_by_reason_for_contact)
-    
-    Returns
-    -------
-    DataFrame
-        Table with columns: Reason for Contact, Perceived Race, Stops, Searches, 
-        Search Rate (%), Hit Rate (%)
     """
-    import numpy as np
     
     rows = []
     
@@ -155,41 +142,48 @@ def create_reason_for_contact_table(policing_by_reason):
 
 
 
-def agency_black_white_hit_rate_table(df):
+def agency_black_white_rates_table(df):
     """
-    Create a publication-ready table from agency-level Black vs White hit rate comparison.
+    Create a publication-ready display table from agency-level
+    Black vs White search rate and hit rate comparison.
+    Rates are formatted as percentages with 95% CIs.
     """
-    
+
     result = df.copy()
-    
-    # Select and rename columns
+
+    def fmt_rate_ci(rate, se):
+        """Format rate as 'XX.X (±YY.Y)'"""
+        if pd.isna(rate) or pd.isna(se):
+            return "---"
+        return f"{rate*100:.1f} (±{1.96*se*100:.1f})"
+
+    result["White Search Rate"] = result.apply(
+        lambda r: fmt_rate_ci(r["White_Search_Rate"], r["White_Search_Rate_SE"]), axis=1
+    )
+    result["Black Search Rate"] = result.apply(
+        lambda r: fmt_rate_ci(r["Black_Search_Rate"], r["Black_Search_Rate_SE"]), axis=1
+    )
+    result["White Hit Rate"] = result.apply(
+        lambda r: fmt_rate_ci(r["White_Hit_Rate"], r["White_Hit_Rate_SE"]), axis=1
+    )
+    result["Black Hit Rate"] = result.apply(
+        lambda r: fmt_rate_ci(r["Black_Hit_Rate"], r["Black_Hit_Rate_SE"]), axis=1
+    )
+
     result = result[[
         "agency_name",
-        "White_Search_Count",
-        "White_Hit_Count", 
-        "White_Hit_Rate",
-        "Black_Search_Count",
-        "Black_Hit_Count",
-        "Black_Hit_Rate"
+        "White_Stop_Count",  "White_Search_Count", "White Search Rate", "White Hit Rate",
+        "Black_Stop_Count",  "Black_Search_Count", "Black Search Rate", "Black Hit Rate",
     ]].copy()
-    
+
     result.columns = [
-        "Agency Name",
-        "White Search Count",
-        "White Hit Count",
-        "White Hit Rate",
-        "Black Search Count", 
-        "Black Hit Count",
-        "Black Hit Rate"
+        "Agency",
+        "White Stops", "White Searches", "White Search Rate (%)", "White Hit Rate (%)",
+        "Black Stops", "Black Searches", "Black Search Rate (%)", "Black Hit Rate (%)",
     ]
-    
-    # Format hit rates as percentages with 2 decimal places
-    result["White Hit Rate"] = (result["White Hit Rate"] * 100).round(2)
-    result["Black Hit Rate"] = (result["Black Hit Rate"] * 100).round(2)
-    
-    # Sort by agency name
-    result = result.sort_values("Agency Name").reset_index(drop=True)
-    
+
+    result = result.sort_values("Agency").reset_index(drop=True)
+
     return result
 
 
@@ -306,15 +300,9 @@ def enhancement_rate_race_statute_category_table(enhancement_by_primary, top_cat
     ]].copy()
     result.columns = ['Charge Category', 'Canonical Race', 'Statute Level', 'Number of Cases', 'Enhancement Rate (%)']
     
-    # Sort by category (by total N), then race, then statute level
-    category_order = (
-        summary.groupby('primary_charge_category')['N']
-        .sum()
-        .sort_values(ascending=False)
-        .index.tolist()
-    )
     race_order = ["Black/African American", "Hispanic/Latino", "White", "Asian", "Other"]
     statute_order = ["Misdemeanor", "Felony"]
+    category_order = ["Assault/Violence", "Weapons", "Obstruct/Resist Officer"]
     
     result['cat_sort'] = result['Charge Category'].map({cat: i for i, cat in enumerate(category_order)})
     result['race_sort'] = result['Canonical Race'].map({race: i for i, race in enumerate(race_order)})
@@ -330,6 +318,8 @@ def enhancement_rate_race_statute_category_table(enhancement_by_primary, top_cat
     )
     
     return result.reset_index(drop=True)
+
+
 
 def wobbler_felony_rate_tables(df):
     """
@@ -612,6 +602,7 @@ def export_policing_pooled_to_latex(policing_analysis):
     return latex_str
 
 
+
 def export_policing_by_year(policing_analysis):
     """
     Export merged Table 1+2: Policing summary by race and year.
@@ -751,6 +742,7 @@ def export_policing_by_year(policing_analysis):
     return latex_str
 
 
+
 def export_reason_for_contact_table_to_latex(table_df):
     """
     Export reason-for-contact table to LaTeX format.
@@ -765,7 +757,6 @@ def export_reason_for_contact_table_to_latex(table_df):
     str
         LaTeX table code
     """
-    import os
     
     os.makedirs("../output/tables", exist_ok=True)
     
@@ -828,77 +819,84 @@ def export_reason_for_contact_table_to_latex(table_df):
     
 
 
-def export_agency_hit_rates_to_latex(agency_hit_df):
+def export_agency_hit_rates_to_latex(publication_table, agency_hit_summary):
     """
-    Export agency-level Black vs White hit rate comparison table to LaTeX.
-    Agencies excluded from the scatter plot (Black n < 30 or Black 95% CI > ±20pp)
-    are flagged with a dagger (†).
+    Export agency-level Black vs White search rate and hit rate
+    comparison table to LaTeX. Accepts the output of
+    agency_black_white_rates_table() and agency_hit_summary for
+    computing exclusion flags.
+
+    Agencies excluded from the figure (Black searches < 30 or
+    Black hit rate CI > ±20pp) are flagged with a dagger.
     """
 
     os.makedirs("../output/tables", exist_ok=True)
 
-    df = agency_hit_df.copy()
+    df = publication_table.copy()
 
-    # ------------------------------------------------------------------
-    # Standard errors
-    # ------------------------------------------------------------------
-    df["White_Hit_Rate_SE"] = np.sqrt(
-        df["White_Hit_Rate"] * (1 - df["White_Hit_Rate"]) / df["White_Search_Count"]
+    # ── Compute exclusion flags from raw summary ──────────────────────
+    raw = agency_hit_summary.copy()
+    raw["Black_Hit_Rate_SE"] = np.sqrt(
+        raw["Black_Hit_Rate"] *
+        (1 - raw["Black_Hit_Rate"]) /
+        raw["Black_Search_Count"]
     )
-    df["Black_Hit_Rate_SE"] = np.sqrt(
-        df["Black_Hit_Rate"] * (1 - df["Black_Hit_Rate"]) / df["Black_Search_Count"]
-    )
-    df["Black_CI_Width"] = df["Black_Hit_Rate_SE"] * 1.96 * 100
-
-    # ------------------------------------------------------------------
-    # Exclusion flag (matches plot_agency_black_white_hit_rates criteria)
-    # ------------------------------------------------------------------
-    df["Excluded"] = (
-        (df["Black_Search_Count"] < 30) |
-        (df["Black_CI_Width"] > 20)
+    raw["Black_CI_Width"] = raw["Black_Hit_Rate_SE"] * 1.96 * 100
+    raw["Excluded"] = (
+        (raw["Black_Search_Count"] < 30) |
+        (raw["Black_CI_Width"] > 20)
     )
 
-    # ------------------------------------------------------------------
-    # Sort alphabetically
-    # ------------------------------------------------------------------
-    df = df.sort_values("agency_name").reset_index(drop=True)
+    exclusion_map = raw.set_index("agency_name")["Excluded"].to_dict()
+    df["Excluded"] = df["Agency"].map(exclusion_map).fillna(False)
 
-    # ------------------------------------------------------------------
-    # Build LaTeX
-    # ------------------------------------------------------------------
+    # ── Sort alphabetically ───────────────────────────────────────────
+    df = df.sort_values("Agency").reset_index(drop=True)
+
+    # ── Build LaTeX ───────────────────────────────────────────────────
     latex = []
     latex.append(r"\begin{table}[htbp]")
     latex.append(r"\centering")
-    latex.append(r"\caption{Agency-Level Comparison: White vs.\ Black/African American Hit Rates}")
+    latex.append(r"\small")
+    latex.append(
+        r"\caption{Agency-Level Comparison: White vs.\ "
+        r"Black/African American Search and Hit Rates}"
+    )
     latex.append(r"\label{tab:agency_hit_rates}")
-    latex.append(r"\begin{tabular}{l rr rr}")
+    latex.append(r"\begin{tabular}{l rrrr rrrr}")
     latex.append(r"\toprule")
     latex.append(
-        r" & \multicolumn{2}{c}{White} & "
-        r"\multicolumn{2}{c}{Black/African American} \\"
+        r" & \multicolumn{4}{c}{White} & "
+        r"\multicolumn{4}{c}{Black/African American} \\"
     )
-    latex.append(r"\cmidrule(lr){2-3} \cmidrule(lr){4-5}")
-    latex.append(r"Agency & Searches & Hit Rate (\%) & Searches & Hit Rate (\%) \\")
+    latex.append(r"\cmidrule(lr){2-5} \cmidrule(lr){6-9}")
+    latex.append(
+        r"Agency & Stops & Searches & Search Rate (\%) & Hit Rate (\%) & "
+        r"Stops & Searches & Search Rate (\%) & Hit Rate (\%) \\"
+    )
     latex.append(r"\midrule")
 
     for _, row in df.iterrows():
-        # Dagger if excluded from figure
         dagger = r"\textsuperscript{\dag}" if row["Excluded"] else ""
-        agency = f"{row['agency_name']}{dagger}"
+        agency = f"{row['Agency']}{dagger}"
 
-        w_searches = int(row["White_Search_Count"])
-        w_rate     = row["White_Hit_Rate"] * 100
-        w_ci       = row["White_Hit_Rate_SE"] * 1.96 * 100
-
-        b_searches = int(row["Black_Search_Count"])
-        b_rate     = row["Black_Hit_Rate"] * 100
-        b_ci       = row["Black_CI_Width"]
+        # Parse formatted rate strings like "7.6 (±0.4)"
+        def parse_rate(s):
+            """Extract point estimate and CI from '7.6 (±0.4)' format."""
+            if pd.isna(s) or s == "---":
+                return "---"
+            return s.replace("(±", r"({\scriptsize $\pm$").replace(")", "})")
 
         latex.append(
-            f"{agency} & {w_searches:,} & "
-            f"{w_rate:.1f} ({{\\scriptsize $\\pm${w_ci:.1f}}}) & "
-            f"{b_searches:,} & "
-            f"{b_rate:.1f} ({{\\scriptsize $\\pm${b_ci:.1f}}}) \\\\"
+            f"{agency} & "
+            f"{int(row['White Stops']):,} & "
+            f"{int(row['White Searches']):,} & "
+            f"{parse_rate(row['White Search Rate (%)'])} & "
+            f"{parse_rate(row['White Hit Rate (%)'])} & "
+            f"{int(row['Black Stops']):,} & "
+            f"{int(row['Black Searches']):,} & "
+            f"{parse_rate(row['Black Search Rate (%)'])} & "
+            f"{parse_rate(row['Black Hit Rate (%)'])} \\\\"
         )
 
     latex.append(r"\bottomrule")
@@ -906,13 +904,15 @@ def export_agency_hit_rates_to_latex(agency_hit_df):
     latex.append(r"\smallskip")
     latex.append(
         r"\parbox{\textwidth}{\footnotesize"
-        r" \textit{Note:} Hit rates represent the proportion of discretionary searches "
-        r"that recovered contraband, with 95\% confidence intervals shown in parentheses "
-        r"($\pm 1.96$ SE). Only agencies with at least 5 searches for both White and "
-        r"Black/African American individuals are included in this table. "
-        r"\textsuperscript{\dag} Agency excluded from Figure~\ref{fig:agency_hit} due to "
-        r"fewer than 30 Black/African American searches or a 95\% confidence interval "
-        r"exceeding $\pm$20 percentage points.}"
+        r" \textit{Note:} Search rates represent the proportion of stops "
+        r"that resulted in a discretionary search. Hit rates represent the "
+        r"proportion of discretionary searches that recovered contraband. "
+        r"95\% confidence intervals shown in parentheses ($\pm 1.96$ SE). "
+        r"\textsuperscript{\dag} Agency excluded from "
+        r"Figure~\ref{fig:agency_rates} due to fewer than 30 "
+        r"Black/African American searches or a 95\% confidence interval "
+        r"exceeding $\pm$20 percentage points for the Black hit rate estimate. "
+        r"Data pooled across 2022--2024.}"
     )
     latex.append(r"\end{table}")
 
@@ -1016,18 +1016,12 @@ def export_combined_sensitivity_to_latex(
 
 
 
-def export_enhancement_tables_to_latex(enhancement_combined, enhancement_category):
+def export_enhancement_category_table_to_latex(enhancement_category):
     """
-    Export the two enhancement tables to LaTeX.
-
-    Outputs:
-      - ../output/tables/enhancement_overall.tex
-      - ../output/tables/enhancement_by_category.tex
+    Export enhancement rates by charge category, race, and statute level to LaTeX.
+    Assumes enhancement_category already excludes 'Other' race, 'Other' charge category,
+    and DUI. Only includes Assault/Violence, Weapons, and Obstruct/Resist Officer.
     """
-
-    import os
-    import re
-    import pandas as pd
 
     os.makedirs("../output/tables", exist_ok=True)
 
@@ -1042,86 +1036,19 @@ def export_enhancement_tables_to_latex(enhancement_combined, enhancement_categor
             return "---"
         return f"{int(x):,}"
 
-    # -----------------------------
-    # Table 1: Overall + statute level by race
-    # -----------------------------
-    overall = enhancement_combined.copy()
-
-    overall["Number of Cases"] = overall["Number of Cases"].apply(fmt_int_with_commas)
-    overall["Enhancement Rate (%)"] = overall["Enhancement Rate (%)"].apply(latexify_ci_string)
-
-    overall = overall.rename(columns={
-        "Enhancement Rate (%)": r"Enhancement Rate (\%)"
-    })
-
-    overall_latex = overall.to_latex(
-        index=False,
-        escape=False,
-        column_format="llrr",
-        caption="Enhancement Rates by Race and Statute Level",
-        label="tab:enhancement_overall",
-        na_rep="---"
-    )
-
-    # Shade Overall rows
-    lines = overall_latex.splitlines()
-    shaded_lines = []
-    data_started = False
-
-    for line in lines:
-        if r"\midrule" in line:
-            data_started = True
-            shaded_lines.append(line)
-            continue
-
-        if data_started and "& Overall &" in line:
-            line = r"\rowcolor{gray!15} " + line
-
-        shaded_lines.append(line)
-
-    # Add separators between race groups, but not after the header
-    final_lines = []
-    for i, line in enumerate(shaded_lines):
-        final_lines.append(line)
-
-        if i + 1 < len(shaded_lines):
-            next_line = shaded_lines[i + 1]
-
-            current_has_row = "&" in line and r"\bottomrule" not in line and r"\midrule" not in line
-            next_is_new_race = "& Overall &" in next_line
-
-            if current_has_row and next_is_new_race:
-                final_lines.append(r"\midrule")
-
-    overall_latex = "\n".join(final_lines)
-
-    overall_latex = overall_latex.replace(
-        r"\end{tabular}",
-        r"""\end{tabular}
-\smallskip
-\parbox{\textwidth}{\footnotesize \textit{Note:} 95\% confidence intervals shown in parentheses ($\pm 1.96$ SE). The "Overall" row aggregates across statute levels within race.}"""
-    )
-
-    with open("../output/tables/enhancement_overall.tex", "w", encoding="utf-8") as f:
-        f.write(overall_latex)
-
-    # -----------------------------
-    # Table 2: By charge category, race, and statute level
-    # -----------------------------
     by_cat = enhancement_category.copy()
 
     by_cat["Number of Cases"] = by_cat["Number of Cases"].apply(fmt_int_with_commas)
     by_cat["Enhancement Rate (%)"] = by_cat["Enhancement Rate (%)"].apply(latexify_ci_string)
 
     by_cat = by_cat.rename(columns={
-        "Charge Category": "Category",
-        "Canonical Race": "Race",
-        "Statute Level": "Statute Level",
-        "Number of Cases": "Cases",
-        "Enhancement Rate (%)": r"Enhancement Rate (\%)"
+        "Charge Category":      "Category",
+        "Canonical Race":       "Race",
+        "Statute Level":        "Statute Level",
+        "Number of Cases":      "Cases",
+        "Enhancement Rate (%)": r"Enhancement Rate (\%)",
     })
 
-    # Bold category labels for readability
     by_cat["Category"] = by_cat["Category"].apply(
         lambda x: rf"\textbf{{{x}}}" if x != "" else x
     )
@@ -1132,12 +1059,10 @@ def export_enhancement_tables_to_latex(enhancement_combined, enhancement_categor
         column_format="lllrr",
         caption="Enhancement Rates by Charge Category, Race, and Statute Level",
         label="tab:enhancement_by_category",
-        na_rep="---"
+        na_rep="---",
     )
 
-    # Insert separators:
-    # - full-width rule between categories
-    # - partial rule between races within a category (excluding Category column)
+    # Insert separators between category blocks and race blocks
     lines = by_cat_latex.splitlines()
     new_lines = []
     data_started = False
@@ -1153,51 +1078,59 @@ def export_enhancement_tables_to_latex(enhancement_combined, enhancement_categor
             next_line = lines[i + 1]
 
             current_has_row = "&" in line and r"\bottomrule" not in line
-            next_has_row = "&" in next_line and r"\bottomrule" not in next_line
+            next_has_row    = "&" in next_line and r"\bottomrule" not in next_line
 
             if current_has_row and next_has_row:
-                next_parts = [p.strip() for p in next_line.split("&")]
-
+                next_parts    = [p.strip() for p in next_line.split("&")]
                 next_category = next_parts[0] if len(next_parts) > 0 else ""
-                next_race = next_parts[1] if len(next_parts) > 1 else ""
+                next_race     = next_parts[1] if len(next_parts) > 1 else ""
+                current_parts = [p.strip() for p in line.split("&")]
+                current_race  = current_parts[1] if len(current_parts) > 1 else ""
 
-                # New category block
                 if next_category != "":
+                    # New category block — full horizontal rule
                     new_lines.append(r"\addlinespace")
                     new_lines.append(r"\midrule")
-
-                # New race block within same category:
-                # draw a line from Race through Enhancement Rate only
-                elif next_race != "":
+                elif next_race != "" and current_race == "":
+                    # New race within same category — partial rule
                     new_lines.append(r"\noalign{\vskip 2pt}")
                     new_lines.append(r"\cline{2-5}")
                     new_lines.append(r"\noalign{\vskip 2pt}")
 
     by_cat_latex = "\n".join(new_lines)
 
+    note = (
+        r"\smallskip" + "\n"
+        r"\parbox{\textwidth}{\footnotesize \textit{Note:} "
+        r"95\% confidence intervals shown in parentheses ($\pm 1.96$ SE). "
+        r"DUI cases are excluded because the enhancement flag in those cases "
+        r"reflects the Orange County DA's standard practice of jointly filing "
+        r"VC~23152(a) and VC~23152(b) as paired counts rather than a traditional "
+        r"sentencing enhancement: 15{,}792 of 17{,}675 DUI cases (89.3\%) had an "
+        r"enhancement charge, of which 16{,}893 of 16{,}899 enhancement charges "
+        r"were VC~23152(a) or 23152(b). "
+        r"The ``Other'' race category and ``Other'' charge category are omitted. "
+        r"Categories with near-zero enhancement rates across all racial groups or "
+        r"insufficient subgroup counts for reliable inference are also omitted. "
+        r"Categories are ordered by offense severity.}"
+    )
+
     by_cat_latex = by_cat_latex.replace(
         r"\end{tabular}",
-        r"""\end{tabular}
-\smallskip
-\parbox{\textwidth}{\footnotesize \textit{Note:} 95\% confidence intervals shown in parentheses ($\pm 1.96$ SE). The "Other" charge category is omitted, and categories shown have an overall enhancement rate of at least 5\%. Categories are ordered by total case volume in descending order.}"""
+        r"\end{tabular}" + "\n" + note,
     )
 
     with open("../output/tables/enhancement_by_category.tex", "w", encoding="utf-8") as f:
         f.write(by_cat_latex)
 
-    print("Tables exported:")
-    print(" - enhancement_overall.tex")
-    print(" - enhancement_by_category.tex")
+    print("Table exported: enhancement_by_category.tex")
+    return by_cat_latex
 
-    return overall_latex, by_cat_latex
 
 
 def export_wobbler_combined_to_latex(wobbler_combined):
     """
     Export the combined wobbler table (Overall + by charge category) to LaTeX.
-
-    Outputs:
-      - ../output/tables/wobbler_combined.tex
     """
 
     os.makedirs("../output/tables", exist_ok=True)
@@ -1306,4 +1239,97 @@ def export_wobbler_combined_to_latex(wobbler_combined):
         f.write(latex_str)
 
     print("Table exported: wobbler_combined.tex")
+    return latex_str
+
+
+
+def export_statute_table_to_latex(consolidated,
+                                   output_path="../output/tables/enhancement_by_statute.tex"):
+    """
+    Export enhancement rates by statute and race to LaTeX.
+    Rates represent the proportion of all non-DUI cases for each racial
+    group that contained at least one enhancement charge of that statute.
+    """
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    def latexify_ci_string(x):
+        """Convert '0.31 (±0.18)' to LaTeX scriptsize format."""
+        if pd.isna(x) or str(x).strip() in ("---", "nan"):
+            return "---"
+        x = str(x)
+        return re.sub(r"\(±([^)]+)\)", r"({\\scriptsize $\\pm$" + r"\1})", x)
+
+    def fmt_int_with_commas(x):
+        if pd.isna(x):
+            return "---"
+        return f"{int(x):,}"
+
+    tbl = consolidated.copy()
+    tbl = tbl.drop(columns=["Other"], errors="ignore")
+    tbl = tbl.drop(columns=["% of Enhancements"], errors="ignore")
+
+    # Format columns
+    tbl["Total"] = tbl["Total"].apply(fmt_int_with_commas)
+
+    for col in ["Black/African American", "Hispanic/Latino",
+                "White", "Asian", "Other"]:
+        if col in tbl.columns:
+            tbl[col] = tbl[col].apply(latexify_ci_string)
+
+    # Rename columns for LaTeX
+    tbl = tbl.rename(columns={
+        "Statute":                "Statute",
+        "Description":            "Description",
+        "Total":                  "Total",
+        "Black/African American": "Black/Afr. American",
+        "Hispanic/Latino":        "Hispanic/Latino",
+        "White":                  "White",
+        "Asian":                  "Asian",
+        "Other":                  "Other",
+    })
+
+    # Bold statute column
+    tbl["Statute"] = tbl["Statute"].apply(lambda x: rf"\textbf{{{x}}}")
+
+    latex_str = tbl.to_latex(
+        index=False,
+        escape=False,
+        column_format="p{1.5cm}p{4cm}rrrr",
+        caption=(
+            "Enhancement Rates by Statute and Race"),
+        label="tab:enhancement_by_statute",
+        na_rep="---",
+    )
+
+    latex_str = latex_str.replace(
+        r"\begin{tabular}",
+        r"\small" + "\n" + r"\begin{tabular}",
+    )
+
+    # Add note below table
+    note = (
+        r"\smallskip" + "\n"
+        r"\parbox{\textwidth}{\footnotesize \textit{Note:} "
+        r"95\% confidence intervals shown in parentheses ($\pm 1.96$ SE). "
+        r"Rates are computed as the number of non-DUI cases for each racial "
+        r"group containing at least one enhancement charge of the given statute, "
+        r"divided by the total number of non-DUI cases for that group. "
+        r"DUI cases are excluded because the enhancement flag in those cases "
+        r"reflects the DA's standard practice of filing VC~23152(a) and "
+        r"VC~23152(b) as paired counts rather than a traditional sentencing "
+        r"enhancement. The ``Other'' race category is omitted from the figure "
+        r"but shown here for completeness. "
+        r"Statutes are ordered by total enhancement count in descending order.}"
+    )
+
+    latex_str = latex_str.replace(
+        r"\end{tabular}",
+        r"\end{tabular}" + "\n" + note,
+    )
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(latex_str)
+
+    print(f"Table exported: {output_path}")
     return latex_str

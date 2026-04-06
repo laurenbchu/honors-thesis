@@ -1802,7 +1802,7 @@ def plot_enhancement_by_statute(statute_rate_by_race, focus_statutes, statute_de
                 continue
 
             denom = int(total_lookup.get(race, 0))
-            label = f"{rates[i]:.2f}%\n(n={int(ns[i])})"
+            label = f"{rates[i]:.2f}%\n(n={int(ns[i]):,} of {denom:,})"
 
             ax.text(
                 i,

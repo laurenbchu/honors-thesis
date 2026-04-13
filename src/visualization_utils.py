@@ -5,6 +5,7 @@ import os
 import matplotlib.colors as mcolors
 from matplotlib.ticker import FuncFormatter
 import matplotlib.lines as mlines
+from matplotlib.lines import Line2D
 
 # ------------------------------------------------------------------
 # Plotting and visualization utilities
@@ -2679,3 +2680,179 @@ def plot_agency_black_white_rates_poster(agency_df):
     fig.subplots_adjust(top=0.88, bottom=0.12, left=0.10, right=0.97)
 
     return fig
+
+
+def plot_risk_adjusted(risk_adjusted):
+    """
+    Dot plot comparing actual vs. predicted hit rates by race
+    after controlling for observable stop characteristics.
+    Hollow circle = predicted (risk-adjusted), filled = actual.
+    """
+
+    plt.rcParams.update({
+        "font.size": 13,
+        "axes.titlesize": 13,
+        "axes.labelsize": 13,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
+        "legend.fontsize": 13,
+    })
+
+    # Match ordering and exclude Other to stay consistent with other figures
+    races = [r for r in RACE_ORDER if r != "Other"]
+    df = risk_adjusted.loc[races].copy()
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    x = np.arange(len(races))
+
+    for i, race in enumerate(races):
+        color    = COLOR_MAP[race]
+        is_white = race == "White"
+        actual   = df.loc[race, "actual_hit_rate"] * 100
+        pred     = df.loc[race, "predicted_hit_rate"] * 100
+
+        # Line connecting predicted to actual
+        ax.plot([i, i], [pred, actual],
+                color=color, linewidth=1.5, zorder=2)
+
+        # Predicted: hollow circle
+        ax.plot(i, pred,
+                marker="o", markersize=11,
+                color=color,
+                markerfacecolor="white",
+                markeredgecolor=color,
+                markeredgewidth=2.0,
+                linestyle="none",
+                zorder=4)
+
+        # Actual: filled circle
+        ax.plot(i, actual,
+                marker="o", markersize=11,
+                color=color,
+                markerfacecolor=color,
+                markeredgecolor=color,
+                markeredgewidth=1.2,
+                linestyle="none",
+                zorder=5)
+
+    # Axes formatting
+    ax.set_title(
+        "Actual vs. Risk-Adjusted Predicted Hit Rate by Race (2024)",
+        fontsize=13, fontweight="bold", pad=8
+    )
+    ax.set_ylabel("Hit Rate", fontsize=13)
+    ax.set_xticks(x)
+    ax.set_xticklabels(["Black/\nAfrican American", "Hispanic/\nLatino", "White", "Asian"], fontsize=12)
+    ax.set_xlim(-0.6, len(races) - 0.4)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
+    ax.grid(True, axis="y", alpha=0.3, linestyle=":", linewidth=0.8)
+    ax.set_axisbelow(True)
+
+    # Top padding
+    ylo, yhi = ax.get_ylim()
+    ax.set_ylim(ylo, yhi + 0.14 * (yhi - ylo))
+
+    # Legend
+    legend_elements = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="white",
+               markeredgecolor="black", markeredgewidth=2.0,
+               markersize=9, label="Predicted (risk-adjusted)"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="black",
+               markersize=9, label="Actual"),
+    ]
+    ax.legend(handles=legend_elements, fontsize=12)
+
+    # Add residual annotations next to each race
+    for i, race in enumerate(races):
+        residual = df.loc[race, "residual"] * 100
+        sign     = "+" if residual > 0 else ""
+        ax.text(i + 0.15, df.loc[race, "actual_hit_rate"] * 100,
+                f"{sign}{residual:.1f}pp",
+                va="center", fontsize=13, color=COLOR_MAP[race])
+
+    plt.tight_layout()
+    return fig
+
+
+
+def plot_kitchen_sink(race_results):
+    """
+    Vertical dot plot of odds ratios from kitchen sink logistic regression.
+    Reference line at 1.0 = no difference from White.
+    Points below 1.0 = lower odds of contraband recovery than White.
+    """
+
+    plt.rcParams.update({
+        "font.size":       13,
+        "axes.titlesize":  14,
+        "axes.labelsize":  13,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
+        "legend.fontsize": 13,
+    })
+
+    race_order_ks = ["Black/African American", "Hispanic/Latino", "Asian"]
+    df = race_results.reindex(race_order_ks).copy()
+
+    ors   = np.exp(df["Coef."].values)
+    lower = np.exp(df["[0.025"].values)
+    upper = np.exp(df["0.975]"].values)
+    x     = np.arange(len(race_order_ks))
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    for i, race in enumerate(race_order_ks):
+        color    = COLOR_MAP[race]
+        is_white = race == "White"
+
+        ax.errorbar(
+            x[i], ors[i],
+            yerr=[[ors[i] - lower[i]], [upper[i] - ors[i]]],
+            fmt="o",
+            linestyle="none",
+            markersize=13,
+            markerfacecolor="white" if is_white else color,
+            markeredgecolor=color,
+            markeredgewidth=2.0 if is_white else 1.0,
+            capsize=4, capthick=1.5, elinewidth=1.8,
+            color=color,
+            zorder=4,
+        )
+
+    # Reference line at 1.0
+    ax.axhline(y=1.0, color="black", linestyle="--", linewidth=1.2, zorder=1)
+
+    # Set ylim so reference line is always visible
+    ylo = min(lower) - 0.05
+    yhi = 1.05
+    ax.set_ylim(ylo, yhi)
+
+    # Annotations above each point
+    offset = (yhi - ylo) * 0.03
+    for i, race in enumerate(race_order_ks):
+        ax.text(
+            x[i], upper[i] + offset,
+            f"{ors[i]:.3f}\n({lower[i]:.3f}, {upper[i]:.3f})",
+            ha="center", va="bottom", fontsize=12,
+            color=COLOR_MAP[race],
+        )
+
+    # Reference label
+    ax.text(0.02, 1.015, "White (reference)",
+            fontsize=10, color="gray", ha="left",
+            transform=ax.get_yaxis_transform())
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(["Black/\nAfrican American", "Hispanic/\nLatino", "Asian"],
+                       fontsize=13)
+    ax.set_ylabel("Odds Ratio (relative to White)", fontsize=13)
+    ax.set_title(
+        "Odds of Contraband Recovery Relative to White\n(Controlling for Observable Stop Characteristics)",
+        fontsize=14, fontweight="bold", pad=10,
+    )
+    ax.set_xlim(-0.5, len(race_order_ks) - 0.5)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.2f}"))
+    ax.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()

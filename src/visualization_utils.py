@@ -2702,7 +2702,7 @@ def plot_risk_adjusted(risk_adjusted):
     races = [r for r in RACE_ORDER if r != "Other"]
     df = risk_adjusted.loc[races].copy()
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(6, 5))
     x = np.arange(len(races))
 
     for i, race in enumerate(races):
@@ -2725,7 +2725,7 @@ def plot_risk_adjusted(risk_adjusted):
                 linestyle="none",
                 zorder=4)
 
-        # Actual: filled circle
+        # Actual: always filled
         ax.plot(i, actual,
                 marker="o", markersize=11,
                 color=color,
@@ -2735,14 +2735,26 @@ def plot_risk_adjusted(risk_adjusted):
                 linestyle="none",
                 zorder=5)
 
+        # Annotation — Asian on left, everyone else on right
+        residual = df.loc[race, "residual"] * 100
+        sign     = "+" if residual > 0 else ""
+        ha       = "right" if race == "Asian" else "left"
+        x_offset = -0.15 if race == "Asian" else 0.15
+        ax.text(i + x_offset, actual,
+                f"{sign}{residual:.1f}pp",
+                va="center", ha=ha, fontsize=12, color=color)
+
     # Axes formatting
     ax.set_title(
-        "Actual vs. Risk-Adjusted Predicted Hit Rate by Race (2024)",
+        "Actual vs. Risk-Adjusted Hit Rate by Race (2024)",
         fontsize=13, fontweight="bold", pad=8
     )
     ax.set_ylabel("Hit Rate", fontsize=13)
     ax.set_xticks(x)
-    ax.set_xticklabels(["Black/\nAfrican American", "Hispanic/\nLatino", "White", "Asian"], fontsize=12)
+    ax.set_xticklabels(
+        ["Black/\nAfrican American", "Hispanic/\nLatino", "White", "Asian"],
+        fontsize=12
+    )
     ax.set_xlim(-0.6, len(races) - 0.4)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
     ax.grid(True, axis="y", alpha=0.3, linestyle=":", linewidth=0.8)
@@ -2760,19 +2772,11 @@ def plot_risk_adjusted(risk_adjusted):
         Line2D([0], [0], marker="o", color="w", markerfacecolor="black",
                markersize=9, label="Actual"),
     ]
-    ax.legend(handles=legend_elements, fontsize=12)
-
-    # Add residual annotations next to each race
-    for i, race in enumerate(races):
-        residual = df.loc[race, "residual"] * 100
-        sign     = "+" if residual > 0 else ""
-        ax.text(i + 0.15, df.loc[race, "actual_hit_rate"] * 100,
-                f"{sign}{residual:.1f}pp",
-                va="center", fontsize=13, color=COLOR_MAP[race])
+    ax.legend(handles=legend_elements, fontsize=12,
+              loc="upper left", borderpad=0.5)
 
     plt.tight_layout()
     return fig
-
 
 
 def plot_kitchen_sink(race_results):

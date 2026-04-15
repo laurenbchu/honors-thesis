@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import matplotlib.colors as mcolors
-from matplotlib.ticker import FuncFormatter
 import matplotlib.lines as mlines
 from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 # ------------------------------------------------------------------
 # Plotting and visualization utilities
@@ -2933,6 +2933,8 @@ def plot_regression_disparities_poster(results_df):
     """
     Poster-optimized coefficient plot of racial disparities in search rates.
     One panel per race group, larger fonts, no legend (models readable from y-axis labels).
+    Y-axis: Unadjusted at top, Disparate Treatment middle, Disparate Impact at bottom.
+    X-axis: percentage points, integer ticks, no rotation.
     """
 
     plt.rcParams.update({
@@ -2944,21 +2946,22 @@ def plot_regression_disparities_poster(results_df):
         "legend.fontsize":  16,
     })
 
-    model_order = ["Kitchen Sink", "Risk-Adjusted", "Raw Disparity"]
+    model_order = ["Unadjusted", "Disparate Treatment", "Disparate Impact"]
+
     model_markers = {
-        "Kitchen Sink":  "s",
-        "Risk-Adjusted": "o",
-        "Raw Disparity": "^",
+        "Unadjusted":          "^",
+        "Disparate Treatment": "s",
+        "Disparate Impact":    "o",
     }
     model_colors = {
-        "Kitchen Sink":  "#2c7bb6",
-        "Risk-Adjusted": "#1a9641",
-        "Raw Disparity": "#d7191c",
+        "Unadjusted":          "#d7191c",
+        "Disparate Treatment": "#2c7bb6",
+        "Disparate Impact":    "#1a9641",
     }
     model_labels = {
-        "Kitchen Sink":  "Kitchen\nSink",
-        "Risk-Adjusted": "Risk-\nAdjusted",
-        "Raw Disparity": "Raw\nDisparity",
+        "Unadjusted":          "Unadjusted",
+        "Disparate Treatment": "Disparate\nTreatment",
+        "Disparate Impact":    "Disparate\nImpact",
     }
 
     races_all = [r for r in results_df["race"].unique() if r != "Other"]
@@ -2967,14 +2970,13 @@ def plot_regression_disparities_poster(results_df):
     fig, axes = plt.subplots(
         1, n_panels,
         figsize=(6 * n_panels, 6),
-        gridspec_kw={"wspace": 0.25},
+        gridspec_kw={"wspace": 0.35},
     )
     if n_panels == 1:
         axes = [axes]
 
     for ax, (race, panel_letter) in zip(axes, zip(races_all, "ABCDEFG")):
 
-        # Store stars info to draw after xlim is set
         stars_to_draw = []
 
         for m_i, model in enumerate(model_order):
@@ -2986,9 +2988,9 @@ def plot_regression_disparities_poster(results_df):
                 continue
             row = row.iloc[0]
 
-            coef  = row["coef"]
-            ci_lo = row["ci_lo"]
-            ci_hi = row["ci_hi"]
+            coef  = row["coef"]  * 100
+            ci_lo = row["ci_lo"] * 100
+            ci_hi = row["ci_hi"] * 100
             pval  = row["pval"]
 
             color  = model_colors[model]
@@ -3007,35 +3009,30 @@ def plot_regression_disparities_poster(results_df):
                 zorder=3,
             )
 
-            # Store significance stars for later drawing
             stars = ""
-            if pval < 0.001:   stars = "†"
-            elif pval < 0.01:  stars = "**"
-            elif pval < 0.05:  stars = "*"
+            if pval < 0.001:  stars = "†"
+            elif pval < 0.01: stars = "**"
+            elif pval < 0.05: stars = "*"
 
             if stars:
                 stars_to_draw.append((ci_hi, m_i, stars, color))
 
-        # Reference line at zero
         ax.axvline(0, color="gray", linestyle="--", linewidth=1.2, zorder=1)
 
-        # Alternating row shading
         for i in range(len(model_order)):
             if i % 2 == 0:
                 ax.axhspan(i - 0.5, i + 0.5, color="0.95", alpha=1.0, zorder=0)
 
-        # Set x limits
         all_vals = results_df[results_df["race"] == race]
-        x_min = all_vals["ci_lo"].min()
-        x_max = all_vals["ci_hi"].max()
+        x_min = all_vals["ci_lo"].min() * 100
+        x_max = all_vals["ci_hi"].max() * 100
         padding = (x_max - x_min) * 0.2
-        ax.set_xlim(min(x_min - padding, -0.01), x_max + padding * 3)
+        ax.set_xlim(min(x_min - padding, -1), x_max + padding * 3)
 
-        # Now draw asterisks clipped to plot bounds
         x_right = ax.get_xlim()[1]
-        for ci_hi, m_i, stars, color in stars_to_draw:
+        for ci_hi_pp, m_i, stars, color in stars_to_draw:
             ax.text(
-                min(ci_hi + 0.002, x_right - 0.004), m_i, stars,
+                min(ci_hi_pp + 0.2, x_right - 0.4), m_i, stars,
                 va="center", ha="left",
                 fontsize=16, color=color,
             )
@@ -3043,33 +3040,47 @@ def plot_regression_disparities_poster(results_df):
         ax.set_yticks(range(len(model_order)))
         ax.set_yticklabels(
             [model_labels[m] for m in model_order] if ax == axes[0] else [],
-            fontsize=16
+            fontsize=16,
         )
-        ax.set_xlabel("Difference in Search Rate\nvs. White", fontsize=17, labelpad=12)
+
+        ax.set_ylim(-0.5, len(model_order) - 0.5)
+        ax.invert_yaxis()
+
+        ax.set_xlabel(
+            "Difference in Search Rate\nvs. White (pp)",
+            fontsize=17, labelpad=12,
+        )
+        ax.xaxis.set_major_formatter(
+            FuncFormatter(lambda x, _: f"{x:.0f}")
+        )
+        ax.xaxis.set_major_locator(
+            MaxNLocator(nbins=4, integer=True, prune="both")
+        )
+        ax.tick_params(axis="x", labelsize=14)
+
         ax.set_title(
             f"({panel_letter}) {race}",
             fontsize=20, fontweight="bold", pad=14,
         )
-        ax.tick_params(labelsize=16)
-        ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.2f}"))
         ax.grid(axis="x", alpha=0.5, linestyle=":", linewidth=1)
         ax.set_axisbelow(True)
-        ax.set_ylim(-0.5, len(model_order) - 0.5)
 
     axes[0].set_ylabel("Model Specification", fontsize=17)
 
     fig.suptitle(
         "Racial Disparities in Search Rates\n"
-        "Estimated from Kitchen Sink and Risk-Adjusted Probability Models",
+        "Unadjusted, Disparate Treatment, and Disparate Impact Models",
         fontsize=20, fontweight="bold", y=1.05,
     )
 
-    fig.subplots_adjust(top=0.82, bottom=0.2, left=0.16, right=0.94)
-
     fig.text(
-        0.5, -0.02,
-        "Coefficients represent the difference in search rate relative to White drivers, holding all observable stop characteristics constant. † p<0.001",
-        ha="center", va="top", fontsize=15, color="0.3",
+        0.95, 1.04,
+        "\u2020 $p < 0.001$",
+        ha="right", va="top",
+        fontsize=15, color="0.3",
+        transform=fig.transFigure,
     )
+    
+    fig.subplots_adjust(top=0.82, bottom=0.2, left=0.16, right=0.94)
 
     return fig

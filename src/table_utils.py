@@ -1332,3 +1332,104 @@ def export_statute_table_to_latex(consolidated,
 
     print(f"Table exported: {output_path}")
     return latex_str
+
+
+def export_regression_results_to_latex(results_df):
+    """
+    Export regression results DataFrame to a LaTeX table.
+    """
+
+    os.makedirs("../output/tables", exist_ok=True)
+
+    df = results_df.copy()
+
+    # ── Rename model labels to match thesis terminology ───────────────
+    model_rename = {
+        "Raw Disparity":  "Unadjusted",
+        "Kitchen Sink":   "Disparate Treatment",
+        "Risk-Adjusted":  "Disparate Impact",
+    }
+    df["model"] = df["model"].map(model_rename)
+
+    # ── Define display order ──────────────────────────────────────────
+    race_order = [
+        "Black/African American",
+        "Hispanic/Latino",
+        "Asian",
+        "Other",
+    ]
+    model_order = ["Unadjusted", "Disparate Treatment", "Disparate Impact"]
+
+    # ── Helper: format a single cell ─────────────────────────────────
+    def fmt_cell(coef, ci_lo, ci_hi, pval):
+        """
+        Convert coefficient and CI to percentage points and format as:
+        +2.9pp* (2.3, 3.5)
+        with * indicating p < 0.001.
+        """
+        coef_pp  = coef  * 100
+        lo_pp    = ci_lo * 100
+        hi_pp    = ci_hi * 100
+        sign     = "+" if coef_pp >= 0 else ""
+        star     = r"$^{*}$" if pval < 0.001 else ""
+        return (
+            f"{sign}{coef_pp:.1f}pp{star} "
+            f"({lo_pp:.1f}, {hi_pp:.1f})"
+        )
+
+    # ── Pivot to race × model ─────────────────────────────────────────
+    # Build a dict keyed by (race, model) for fast lookup
+    lookup = {}
+    for _, row in df.iterrows():
+        lookup[(row["race"], row["model"])] = fmt_cell(
+            row["coef"], row["ci_lo"], row["ci_hi"], row["pval"]
+        )
+
+    # ── Build LaTeX ───────────────────────────────────────────────────
+    latex = []
+    latex.append(r"\begin{table}[htbp]")
+    latex.append(r"\centering")
+    latex.append(
+        r"\caption{OLS Estimates of Racial Gaps in Search Rates, 2024 Stops}"
+    )
+    latex.append(r"\label{tab:regression_results}")
+    latex.append(r"\begin{tabular}{l ccc}")
+    latex.append(r"\toprule")
+    latex.append(
+        r"Race (ref: White) & Unadjusted & Disparate Treatment & Disparate Impact \\"
+    )
+    latex.append(r"\midrule")
+
+    for race in race_order:
+        cells = []
+        for model in model_order:
+            cells.append(lookup.get((race, model), "---"))
+        latex.append(f"{race} & {' & '.join(cells)} \\\\")
+
+    latex.append(r"\bottomrule")
+    latex.append(r"\end{tabular}")
+    latex.append(r"\smallskip")
+    latex.append(
+        r"\parbox{\textwidth}{\footnotesize \textit{Note:} Coefficients are "
+        r"percentage-point differences in the probability of being searched "
+        r"relative to White individuals, following the disparate treatment and "
+        r"disparate impact regression framework of Grossman, Nyarko, and Goel "
+        r"\cite{grossman2023racial, grossman2024reconciling}. "
+        r"All models estimated on 2024 discretionary stops using OLS with HC1 "
+        r"robust standard errors. The Disparate Treatment model controls for "
+        r"agency, gender, reason for contact, time period, and age. The "
+        r"Disparate Impact model controls only for a predicted-hit risk score "
+        r"derived from a logistic model trained on 2022--2023 searched "
+        r"individuals, excluding race; additional covariates are omitted to "
+        r"avoid included-variable bias \cite{jung2024mitigating}. "
+        r"95\% confidence intervals in parentheses. "
+        r"$^{*}$ $p < 0.001$.}"
+    )
+    latex.append(r"\end{table}")
+
+    latex_str = "\n".join(latex)
+    with open("../output/tables/regression_results.tex", "w", encoding="utf-8") as f:
+        f.write(latex_str)
+
+    print("Table exported: regression_results.tex")
+    return latex_str

@@ -2928,9 +2928,10 @@ def plot_enhancement_poster(enhancement_by_primary, top_categories=None):
 
     return figs
 
+
 def plot_regression_disparities_poster(results_df):
     """
-    Poster-optimized coefficient plot of racial disparities in search hit rates.
+    Poster-optimized coefficient plot of racial disparities in search rates.
     One panel per race group, larger fonts, no legend (models readable from y-axis labels).
     """
 
@@ -2954,19 +2955,27 @@ def plot_regression_disparities_poster(results_df):
         "Risk-Adjusted": "#1a9641",
         "Raw Disparity": "#d7191c",
     }
+    model_labels = {
+        "Kitchen Sink":  "Kitchen\nSink",
+        "Risk-Adjusted": "Risk-\nAdjusted",
+        "Raw Disparity": "Raw\nDisparity",
+    }
 
     races_all = [r for r in results_df["race"].unique() if r != "Other"]
 
     n_panels = len(races_all)
     fig, axes = plt.subplots(
         1, n_panels,
-        figsize=(5 * n_panels, 6),
-        gridspec_kw={"wspace": 0.15},
+        figsize=(6 * n_panels, 6),
+        gridspec_kw={"wspace": 0.25},
     )
     if n_panels == 1:
         axes = [axes]
 
     for ax, (race, panel_letter) in zip(axes, zip(races_all, "ABCDEFG")):
+
+        # Store stars info to draw after xlim is set
+        stars_to_draw = []
 
         for m_i, model in enumerate(model_order):
             row = results_df[
@@ -2998,18 +3007,14 @@ def plot_regression_disparities_poster(results_df):
                 zorder=3,
             )
 
-            # Significance stars
+            # Store significance stars for later drawing
             stars = ""
-            if pval < 0.001:   stars = "***"
+            if pval < 0.001:   stars = "†"
             elif pval < 0.01:  stars = "**"
             elif pval < 0.05:  stars = "*"
 
             if stars:
-                ax.text(
-                    ci_hi + 0.002, m_i, stars,
-                    va="center", ha="left",
-                    fontsize=16, color=color,
-                )
+                stars_to_draw.append((ci_hi, m_i, stars, color))
 
         # Reference line at zero
         ax.axvline(0, color="gray", linestyle="--", linewidth=1.2, zorder=1)
@@ -3019,34 +3024,52 @@ def plot_regression_disparities_poster(results_df):
             if i % 2 == 0:
                 ax.axhspan(i - 0.5, i + 0.5, color="0.95", alpha=1.0, zorder=0)
 
+        # Set x limits
+        all_vals = results_df[results_df["race"] == race]
+        x_min = all_vals["ci_lo"].min()
+        x_max = all_vals["ci_hi"].max()
+        padding = (x_max - x_min) * 0.2
+        ax.set_xlim(min(x_min - padding, -0.01), x_max + padding * 3)
+
+        # Now draw asterisks clipped to plot bounds
+        x_right = ax.get_xlim()[1]
+        for ci_hi, m_i, stars, color in stars_to_draw:
+            ax.text(
+                min(ci_hi + 0.002, x_right - 0.004), m_i, stars,
+                va="center", ha="left",
+                fontsize=16, color=color,
+            )
+
         ax.set_yticks(range(len(model_order)))
-        ax.set_yticklabels(model_order if ax == axes[0] else [], fontsize=16)
-        ax.set_xlabel("Difference in Hit Rate vs. White", fontsize=17, labelpad=12)
+        ax.set_yticklabels(
+            [model_labels[m] for m in model_order] if ax == axes[0] else [],
+            fontsize=16
+        )
+        ax.set_xlabel("Difference in Search Rate\nvs. White", fontsize=17, labelpad=12)
         ax.set_title(
             f"({panel_letter}) {race}",
             fontsize=20, fontweight="bold", pad=14,
         )
         ax.tick_params(labelsize=16)
         ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.2f}"))
-        ax.grid(axis="x", alpha=0.3, linestyle=":", linewidth=0.8)
+        ax.grid(axis="x", alpha=0.5, linestyle=":", linewidth=1)
         ax.set_axisbelow(True)
         ax.set_ylim(-0.5, len(model_order) - 0.5)
 
     axes[0].set_ylabel("Model Specification", fontsize=17)
 
     fig.suptitle(
-        "Racial Disparities in Search Hit Rates\n"
+        "Racial Disparities in Search Rates\n"
         "Estimated from Kitchen Sink and Risk-Adjusted Probability Models",
         fontsize=20, fontweight="bold", y=1.05,
     )
 
-    fig.subplots_adjust(top=0.78, bottom=0.15, left=0.16, right=0.99)
+    fig.subplots_adjust(top=0.82, bottom=0.2, left=0.16, right=0.94)
 
     fig.text(
         0.5, -0.02,
-        "Coefficients represent the difference in hit rate (contraband found) relative to White drivers,"
-        " holding all observable \nsearch characteristics constant. Asterisks represent: * p<0.05   ** p<0.01   *** p<0.001",
-        ha="center", va="top", fontsize=18, color="0.3",
+        "Coefficients represent the difference in search rate relative to White drivers, holding all observable stop characteristics constant. † p<0.001",
+        ha="center", va="top", fontsize=15, color="0.3",
     )
 
     return fig

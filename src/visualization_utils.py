@@ -2155,7 +2155,7 @@ def plot_wobbler_poster(df, top_categories=None, sort_by="rate_overall"):
     # Figure
     # ------------------------------------------------------------------
     fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(16, 6),
+        1, 2, figsize=(18, 6),
         gridspec_kw={"wspace": 0.45, "width_ratios": [1, 1.6]},
     )
 
@@ -2480,7 +2480,7 @@ def plot_policing_pooled(policing_analysis):
     # ------------------------------------------------------------------
     # Figure: wide and compact for poster
     # ------------------------------------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7))
     axes = axes.flatten()
 
     for ax, panel in zip(axes, panels):
@@ -2593,7 +2593,7 @@ def plot_agency_black_white_rates_poster(agency_df):
 
     sizes = 60 + 4.0 * np.sqrt(d["Avg_Search_Count"])
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5), gridspec_kw={"wspace": 0.3})
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), gridspec_kw={"wspace": 0.3})
 
     def draw_panel(ax, x_vals, y_vals, panel_title, xlabel, ylabel, outliers):
 
@@ -2878,7 +2878,7 @@ def plot_enhancement_poster(enhancement_by_primary, top_categories=None):
             return None
 
         fig, axes = plt.subplots(
-            2, 2, figsize=(16, 10),
+            2, 2, figsize=(18, 10),
             gridspec_kw={"wspace": 0.32, "hspace": 0.70},
         )
         ax1, ax2, ax3, ax4 = axes.flatten()
@@ -2969,7 +2969,7 @@ def plot_regression_disparities_poster(results_df):
     n_panels = len(races_all)
     fig, axes = plt.subplots(
         1, n_panels,
-        figsize=(6 * n_panels, 6),
+        figsize=(7 * n_panels, 6),
         gridspec_kw={"wspace": 0.35},
     )
     if n_panels == 1:

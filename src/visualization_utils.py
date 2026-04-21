@@ -2579,6 +2579,272 @@ def plot_policing_pooled(policing_analysis):
     return fig
 
 
+def plot_policing_combined(policing_analysis, policing_by_reason):
+    """
+    2x2 policing summary figure for poster.
+    Panel A: Stop Rate (per 1,000 residents) — pooled 2022-2024
+    Panel B: Conditional Search Rate (overall) — pooled 2022-2024
+    Panel C: Contraband Hit Rate (outcome test) — pooled 2022-2024
+    Panel D: Contraband Hit Rate by Reason for Contact — pooled 2022-2024
+    """
+
+    plt.rcParams.update({
+        "font.size":        13,
+        "axes.titlesize":   13,
+        "axes.labelsize":   13,
+        "xtick.labelsize":  13,
+        "ytick.labelsize":  13,
+        "legend.fontsize":  13,
+    })
+
+    race_col     = "Perceived Race"
+    SHORT_LABELS = ["Black", "Hispanic", "White", "Asian"]
+
+    # ── Pooled summary across years ───────────────────────────────────
+    df = policing_analysis.copy()
+    df[race_col] = pd.Categorical(df[race_col], categories=RACE_ORDER, ordered=True)
+    df = df[df[race_col] != "Other"].sort_values(["Year", race_col])
+
+    pooled_rows = []
+    for race in RACE_ORDER:
+        d   = df[df[race_col] == race]
+        row = {"Perceived Race": race}
+        row["Stops per 1,000"] = d["Stops per 1,000"].mean()
+        sc  = d["Search Count"].sum()
+        stc = d["Stop Count"].sum()
+        sr  = sc / stc if stc > 0 else np.nan
+        row["Search Rate"]    = sr
+        row["Search Rate SE"] = np.sqrt(sr * (1 - sr) / stc) if stc > 0 else np.nan
+        hc  = d["Hit Count"].sum()
+        hr  = hc / sc if sc > 0 else np.nan
+        row["Hit Rate"]    = hr
+        row["Hit Rate SE"] = np.sqrt(hr * (1 - hr) / sc) if sc > 0 else np.nan
+        pooled_rows.append(row)
+
+    pooled = pd.DataFrame(pooled_rows)
+    pooled[race_col] = pd.Categorical(
+        pooled[race_col], categories=RACE_ORDER, ordered=True
+    )
+
+    # ── Reason-for-contact pooled data (for Panel D) ──────────────────
+    race_order_reason = ["Black/African American", "Hispanic/Latino", "White", "Asian"]
+    reason_order      = list(policing_by_reason.keys())
+
+    def wrap_label(s, max_chars=12):
+        if len(s) <= max_chars:
+            return s
+        words = s.split()
+        mid = len(s) // 2
+        best, best_diff = 0, float("inf")
+        pos = 0
+        for i, w in enumerate(words[:-1]):
+            pos += len(w) + 1
+            diff = abs(pos - mid)
+            if diff < best_diff:
+                best_diff, best = diff, i + 1
+        return " ".join(words[:best]) + "\n" + " ".join(words[best:])
+
+    wrapped_reason_labels = [wrap_label(r) for r in reason_order]
+
+    reason_rows = []
+    for reason, rates_df in policing_by_reason.items():
+        d   = rates_df[rates_df["Perceived Race"] != "Other"].copy()
+        agg = (
+            d.groupby("Perceived Race", as_index=False)
+            .agg({"Stop Count": "sum", "Search Count": "sum", "Hit Count": "sum"})
+        )
+        agg["Reason"]         = reason
+        agg["Search Rate"]    = np.where(
+            agg["Stop Count"] > 0,
+            agg["Search Count"] / agg["Stop Count"], np.nan,
+        )
+        agg["Hit Rate"]       = np.where(
+            agg["Search Count"] > 0,
+            agg["Hit Count"] / agg["Search Count"], np.nan,
+        )
+        agg["Hit Rate SE"]    = np.where(
+            agg["Search Count"] > 0,
+            np.sqrt(
+                agg["Hit Rate"] * (1 - agg["Hit Rate"]) / agg["Search Count"]
+            ),
+            np.nan,
+        )
+        reason_rows.append(agg)
+
+    reason_all = pd.concat(reason_rows, ignore_index=True)
+    reason_all["Perceived Race"] = pd.Categorical(
+        reason_all["Perceived Race"], categories=race_order_reason, ordered=True
+    )
+    reason_all["Reason"] = pd.Categorical(
+        reason_all["Reason"], categories=reason_order, ordered=True
+    )
+    reason_all = reason_all.sort_values(["Perceived Race", "Reason"])
+    reason_all["Hit Rate %"] = reason_all["Hit Rate"] * 100
+    reason_all["Hit CI %"]   = reason_all["Hit Rate SE"] * 1.96 * 100
+
+    # ── Figure ────────────────────────────────────────────────────────
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    ax_a, ax_b, ax_c, ax_d = axes.flatten()
+
+    # ── Helper: dot plot for pooled panels ───────────────────────────
+    def draw_dot_panel(ax, y_col, se_col, title, ylabel, pct):
+        for i, race in enumerate(RACE_ORDER):
+            row      = pooled[pooled[race_col] == race]
+            if row.empty or row[y_col].isna().all():
+                continue
+            val      = float(row[y_col].values[0])
+            color    = COLOR_MAP[race]
+            is_white = race == "White"
+
+            if se_col:
+                se_val = float(row[se_col].values[0])
+                ci     = se_val * 1.96 if pd.notna(se_val) else np.nan
+                if pd.notna(ci) and ci > 0:
+                    ax.errorbar(
+                        i, val, yerr=ci,
+                        fmt="none", ecolor=color,
+                        elinewidth=2.0, capsize=5, capthick=2.0,
+                        alpha=0.9, zorder=4,
+                    )
+                y_anchor = val + ci if (pd.notna(ci) and ci > 0) else val
+            else:
+                y_anchor = val
+
+            ax.plot(
+                i, val,
+                marker="o", markersize=11,
+                color=color,
+                markerfacecolor="white" if is_white else color,
+                markeredgecolor=color,
+                markeredgewidth=2.0 if is_white else 1.2,
+                linestyle="none", zorder=5,
+            )
+            ax.annotate(
+                f"{val:.1%}" if pct else f"{val:.1f}",
+                xy=(i, y_anchor), xytext=(0, 7),
+                textcoords="offset points",
+                ha="center", va="bottom", fontsize=13, color="black",
+            )
+
+        ax.set_title(title, fontsize=13, fontweight="bold", pad=8)
+        ax.set_ylabel(ylabel, fontsize=12)
+        ax.set_xticks(range(len(RACE_ORDER)))
+        ax.set_xticklabels(SHORT_LABELS, fontsize=12)
+        ax.set_xlim(-0.6, len(RACE_ORDER) - 0.4)
+        ax.tick_params(axis="x", length=3)
+        ax.grid(True, axis="y", alpha=0.6, linewidth=0.8, linestyle=":", color="gray")
+        ax.set_axisbelow(True)
+        if pct:
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0%}"))
+        ylo, yhi = ax.get_ylim()
+        ax.set_ylim(ylo, yhi + 0.14 * (yhi - ylo))
+
+    # ── Panel A: Stop Rate ────────────────────────────────────────────
+    draw_dot_panel(
+        ax_a,
+        y_col  = "Stops per 1,000",
+        se_col = None,
+        title  = "(A) Stop Rate\n(per 1,000 residents)",
+        ylabel = "Stops per 1,000 Residents",
+        pct    = False,
+    )
+
+    # ── Panel B: Conditional Search Rate ─────────────────────────────
+    draw_dot_panel(
+        ax_b,
+        y_col  = "Search Rate",
+        se_col = "Search Rate SE",
+        title  = "(B) Conditional Search Rate\n(among those stopped)",
+        ylabel = "Search Rate",
+        pct    = True,
+    )
+
+    # ── Panel C: Contraband Hit Rate ──────────────────────────────────
+    draw_dot_panel(
+        ax_c,
+        y_col  = "Hit Rate",
+        se_col = "Hit Rate SE",
+        title  = "(C) Contraband Hit Rate\n(outcome test)",
+        ylabel = "Hit Rate",
+        pct    = True,
+    )
+
+    # ── Panel D: Hit Rate by Reason for Contact ───────────────────────
+    x       = np.arange(len(reason_order))
+    offsets = {
+        "Black/African American": -0.18,
+        "Hispanic/Latino":        -0.06,
+        "White":                   0.06,
+        "Asian":                   0.18,
+    }
+
+    for race in race_order_reason:
+        d        = reason_all[reason_all["Perceived Race"] == race].sort_values("Reason")
+        if d.empty:
+            continue
+        y        = d["Hit Rate %"].to_numpy()
+        yerr     = d["Hit CI %"].to_numpy()
+        x_race   = x + offsets[race]
+        is_white = race == "White"
+
+        ax_d.errorbar(
+            x_race, y, yerr=yerr,
+            fmt="o", linestyle="none",
+            markersize=11,
+            markerfacecolor="white" if is_white else COLOR_MAP[race],
+            markeredgecolor=COLOR_MAP[race],
+            markeredgewidth=2.0 if is_white else 1.0,
+            capsize=4, capthick=1.5, elinewidth=1.8,
+            color=COLOR_MAP[race],
+            zorder=3 if is_white else 4,
+        )
+
+    ax_d.set_title("(D) Contraband Hit Rate\nby Reason for Contact",
+                   fontsize=13, fontweight="bold", pad=8)
+    ax_d.set_ylabel("Hit Rate (%)", fontsize=12)
+    ax_d.set_xticks(x)
+    ax_d.set_xticklabels(wrapped_reason_labels, rotation=0, ha="center", fontsize=11)
+    ax_d.tick_params(labelsize=12)
+    ax_d.grid(axis="y", alpha=0.3, linestyle=":", linewidth=0.5)
+    ax_d.set_axisbelow(True)
+    ax_d.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.0f}%"))
+    ax_d.set_xlim(-0.5, len(reason_order) - 0.5 + 0.2)
+    yd_min, yd_max = ax_d.get_ylim()
+    ax_d.set_ylim(max(0, yd_min), yd_max * 1.08)
+
+    # ── Shared legend ─────────────────────────────────────────────────
+    legend_handles = []
+    for race in RACE_ORDER:
+        is_white = race == "White"
+        handle   = mlines.Line2D(
+            [0], [0], color=COLOR_MAP[race], linestyle="none", marker="o",
+            markersize=12,
+            markerfacecolor="white" if is_white else COLOR_MAP[race],
+            markeredgecolor=COLOR_MAP[race],
+            markeredgewidth=2.0 if is_white else 1.0,
+            label=race,
+        )
+        legend_handles.append(handle)
+
+    fig.legend(
+        handles=legend_handles,
+        loc="upper center", bbox_to_anchor=(0.5, 0.93),
+        ncol=4, frameon=True, fancybox=False, edgecolor="0.8",
+        fontsize=13, handletextpad=0.6, columnspacing=1.5,
+    )
+
+    # ── Shared title ──────────────────────────────────────────────────
+    fig.suptitle(
+        "Policing Disparities (Pooled 2022\u20132024)",
+        fontsize=15, fontweight="bold", y=0.95,
+    )
+
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+
+    return fig
+
+
+
 def plot_agency_black_white_rates_poster(agency_df):
 
     d = agency_df.copy()

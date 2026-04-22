@@ -7,7 +7,7 @@ The repository is organized around two notebooks:
 1. `notebooks/01_ripa_cleaning.ipynb`
 2. `notebooks/02_analysis.ipynb`
 
-The first notebook downloads and cleans Orange County RIPA stop data for 2022–2024. The second notebook loads the cleaned policing data, the cleaned prosecution data, and 2020 Census population denominators, then reproduces the descriptive analysis, figures, and LaTeX tables used in the thesis.
+The first notebook downloads and cleans Orange County RIPA stop data for 2022–2024. The second notebook loads the cleaned policing data, the cleaned prosecution data, and 2020 Census population denominators, then reproduces the descriptive analysis, regression analysis, figures, and LaTeX tables used in the thesis.
 
 ## Repository Contents
 
@@ -60,8 +60,7 @@ The required packages are:
 - `openpyxl`
 - `jupyter`
 - `adjustText`
-
-`adjustText` is used to improve label placement in the agency-level hit-rate figure. The plotting code includes a fallback if it is unavailable, but installing it is recommended for full replication of the published figure appearance.
+- `statsmodels`
 
 ## Data Inputs
 
@@ -117,7 +116,8 @@ This notebook:
 - computes policing results by reason for contact
 - computes agency-level White–Black hit-rate comparisons
 - computes sensitivity analyses for alternative discretionary-search definitions
-- computes prosecution enhancement analyses
+- estimates OLS regression models of search disparities on 2024 stops
+- computes prosecution enhancement analyses (excluding DUI cases)
 - computes wobbler felony-filing analyses
 - generates display tables and figure objects corresponding to the thesis outputs
 
@@ -136,27 +136,29 @@ data/processed/cleaned_orange_ripa_2022_2024.csv
 When the figure export lines in `02_analysis.ipynb` are uncommented, the notebook can export the following PDF figures to `output/figures/`:
 
 - `policing.pdf`
+- `policing_hit.pdf`
 - `policing_by_reason.pdf`
-- `agency_hits.pdf`
+- `agency_rates.pdf`
 - `sensitivity.pdf`
 - `enhancement_rate_by_race_statute.pdf`
 - `enhancement_assault_violence_weapons.pdf`
-- `enhancement_dui.pdf`
+- `enhancement_by_statute.pdf`
 - `wobblers.pdf`
+- `regressions.pdf`
 
 ### Tables
 
 When the table export lines in `02_analysis.ipynb` are uncommented, the notebook can export the following LaTeX tables to `output/tables/`:
 
-- `stops_searches_per_capita.tex`
-- `searches_hits.tex`
+- `policing_pooled.tex`
+- `policing_by_year.tex`
 - `reason_for_contact.tex`
 - `agency_hits.tex`
 - `sensitivity.tex`
-- `enhancement_overall.tex`
 - `enhancement_by_category.tex`
-- `wobbler_overall.tex`
-- `wobbler_by_category.tex`
+- `enhancement_by_statute.tex`
+- `wobbler_combined.tex`
+- `regression_results.tex`
 
 ## Analytic Details Relevant for Replication
 
@@ -189,9 +191,21 @@ The baseline policing analysis defines discretionary searches using `search_type
 
 A sensitivity analysis also includes a broader search classification that treats `Mixed` and `No search basis` searches as discretionary.
 
+### Regression Analysis of Search Disparities
+
+The regression analysis estimates three OLS linear probability models of the probability of being searched, using 2024 stops only. All models include race indicators with White as the reference category and use HC1 heteroskedasticity-robust standard errors via `statsmodels`.
+
+**Risk score construction.** Prior to model estimation, a logistic regression is trained on all 2022–2023 searched individuals to predict whether a search yielded contraband (the hit indicator). Predictors are agency, gender, reason for contact, time period, and age. The fitted model is then applied to all 2024 stopped individuals to generate a predicted-hit risk score for each stop.
+
+**Model 1 — Unadjusted.** Race indicators only. Coefficients represent unconditional percentage-point differences in search rates relative to White individuals.
+
+**Model 2 — Disparate Treatment.** Race indicators plus all observable stop characteristics pre-search: agency, gender, reason for contact, time period, and age.
+
+**Model 3 — Disparate Impact.** Race indicators plus the predicted-hit risk score only. Additional covariates are excluded to avoid included-variable bias.
+
 ### Enhancement Analysis
 
-The prosecution analysis treats the raw file as charge-level data, then builds case-level measures for enhancement analyses. Cases are classified by primary statute level and primary charge category using a severity-based hierarchy implemented in `src/analysis_utils.py`.
+The prosecution analysis treats the raw file as charge-level data, then builds case-level measures for enhancement analyses. DUI primary cases are excluded because the enhancement flag in those cases reflects the Orange County DA's standard practice of jointly filing VC 23152(a) and VC 23152(b) as paired counts rather than a discretionary sentencing enhancement. Cases are classified by primary statute level and primary charge category using a severity-based hierarchy implemented in `src/analysis_utils.py`.
 
 ### Wobbler Analysis
 

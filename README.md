@@ -1,7 +1,7 @@
-# Orange County Policing and Prosecution Analysis
+# Shifting Forms of Racial Disparity in Policing and Prosecution: Evidence from Orange County’s Criminal Legal System
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/laurenbchu/honors-thesis/main)
 
-This repository was created by Lauren Chu as part of a UC Berkeley Data Science honors thesis advised by Joshua Grossman. It contains the code, processed inputs, and exported outputs for my undergraduate honors thesis on racial disparities in policing and prosecution in Orange County, California.
+This repository was created by Lauren Chu as part of a UC Berkeley Data Science honors thesis advised by Josh Grossman. It contains the code, processed inputs, and exported outputs for my undergraduate honors thesis on racial disparities in policing and prosecution in Orange County, California.
 
 The project compares discretionary decision-making across two stages of the criminal legal system:
 
@@ -43,7 +43,7 @@ The analysis combines these sources with 2020 U.S. Census population denominator
 ## Main Components
 
 - `notebooks/01_ripa_cleaning.ipynb` downloads, harmonizes, and cleans Orange County RIPA stop data.
-- `notebooks/02_analysis.ipynb` runs the policing and prosecution analyses used in the thesis.
+- `notebooks/02_analysis.ipynb` runs the policing and prosecution analyses used in the thesis, including descriptive rate comparisons and OLS regression models of search disparities.
 - `data/processed/` stores processed input files used by the analysis.
 - `data/metadata/` stores source documentation and data dictionaries.
 - `output/` contains thesis-ready figures and tables.
